@@ -1,7 +1,7 @@
-import DashboardOverview from './pages/dashboard-overview'
-import ApiKeysPage from './pages/api-keys-page'
-import BillingPage from './pages/billing-page'
-import SettingsPage from './pages/settings-page'
+import DashboardOverview from './dashboard-overview'
+import ApiKeysPage from './api-keys-page'
+import BillingPage from './billing-page'
+import SettingsPage from './settings-page'
 
 interface DashboardContentProps {
   page: string
