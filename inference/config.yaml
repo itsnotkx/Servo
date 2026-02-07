@@ -1,0 +1,30 @@
+# Tier descriptions (models configured via .env.local)
+routing:
+  tiers:
+    simple:
+      description: "Fact retrieval, simple QA"
+    medium:
+      description: "General tasks, moderate reasoning"
+    complex:
+      description: "Multi-step reasoning, analysis"
+    long_context:
+      description: "Extended context handling"
+    code:
+      description: "Code generation and analysis"
+    creative:
+      description: "Creative writing tasks"
+
+# Default chunking (can be overridden via .env.local)
+chunking:
+  strategy: "semantic"
+  max_chunk_size: 4096
+  overlap: 200
+  threshold_tokens: 8000
+
+# Workflow definitions
+workflows:
+  default:
+    preprocessor: true
+    classifier: true
+    chunker: auto
+    router: true
