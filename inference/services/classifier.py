@@ -1,9 +1,10 @@
-"""Prompt classification service using Instructor with Qwen3-14B."""
+"""Prompt classification service using Outlines and Llama-cpp-python."""
 
 import os
-import instructor
-from openai import OpenAI
-from typing import Optional
+import outlines
+from typing import Optional, Dict, Any, cast
+
+from llama_cpp import Llama
 
 from ..models.classification import ClassificationResult, ComplexityLevel
 
@@ -18,14 +19,14 @@ CLASSIFICATION_SYSTEM_PROMPT = """You are a prompt complexity classifier. Analyz
 5. **code**: Code generation, debugging, code analysis, programming-related tasks
 6. **creative**: Creative writing, storytelling, poetry, artistic content generation
 
-Consider the following when classifying:
-- Token/length requirements
-- Reasoning depth needed
-- Domain specificity
-- Whether the task requires multi-step thinking
-
-Provide a confidence score between 0 and 1 for your classification.
-Always suggest the appropriate model tier based on your classification."""
+You must return a valid JSON object matching the schema.
+Required fields:
+- "complexity": One of the levels above (e.g., "simple", "medium").
+- "reasoning": A brief explanation for the classification.
+- "requires_chunking": Boolean indicating if the input is too long.
+- "suggested_model_tier": The recommended model tier (e.g., "simple", "complex").
+- "confidence": A float score between 0.0 and 1.0.
+"""
 
 
 class PromptClassifier:
@@ -39,24 +40,45 @@ class PromptClassifier:
             config: Optional configuration dict. If not provided, 
                     loads from environment variables.
         """
-        self.endpoint = os.getenv(
-            "CLASSIFIER_ENDPOINT", 
-            config.get("endpoint", "http://localhost:8080/v1") if config else "http://localhost:8080/v1"
+        config = config or {}
+        
+        model_path = os.getenv(
+            "MODEL_PATH",
+            config.get("model_path")
         )
-        self.model = os.getenv(
-            "CLASSIFIER_MODEL",
-            config.get("model", "qwen3-14b") if config else "qwen3-14b"
-        )
-        self.temperature = float(os.getenv(
-            "CLASSIFIER_TEMPERATURE",
-            config.get("temperature", 0.1) if config else 0.1
+        
+        if not model_path:
+            raise ValueError("MODEL_PATH environment variable or config is required.")
+            
+        n_gpu_layers = int(os.getenv(
+            "N_GPU_LAYERS",
+            config.get("n_gpu_layers", -1) # Default to all layers
         ))
         
-        # Initialize Instructor-wrapped OpenAI client
-        self.client = instructor.from_openai(
-            OpenAI(base_url=self.endpoint, api_key="not-needed"),
-            mode=instructor.Mode.JSON
+        n_ctx = int(os.getenv(
+            "N_CTX",
+            config.get("n_ctx", 2048)
+        ))
+        
+        n_batch = int(os.getenv(
+            "N_BATCH",
+            config.get("n_batch", 512)
+        ))
+
+        self.temperature = float(os.getenv(
+            "CLASSIFIER_TEMPERATURE",
+            config.get("temperature", 0.1)
+        ))
+        
+        # Initialize Llama-cpp model via Outlines
+        llm = Llama(
+            model_path=model_path,
+            n_gpu_layers=n_gpu_layers,
+            n_ctx=n_ctx,
+            n_batch=n_batch,
+            verbose=False
         )
+        self.model = outlines.models.LlamaCpp(llm)
     
     def classify(self, prompt: str) -> ClassificationResult:
         """
@@ -68,16 +90,17 @@ class PromptClassifier:
         Returns:
             ClassificationResult with complexity level and metadata.
         """
-        response = self.client.chat.completions.create(
-            model=self.model,
-            response_model=ClassificationResult,
-            temperature=self.temperature,
-            messages=[
-                {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Classify this prompt:\n\n{prompt}"}
-            ]
+        # Construct the prompt
+        full_prompt = f"{CLASSIFICATION_SYSTEM_PROMPT}\n\nUser Prompt: {prompt}\n\nClassification:"
+        
+        # Generate structured output
+        # New interface: model(prompt, schema)
+        result = self.model(
+            full_prompt,
+            ClassificationResult
         )
-        return response
+        
+        return cast(ClassificationResult, result)
     
     def quick_classify(self, prompt: str) -> ComplexityLevel:
         """

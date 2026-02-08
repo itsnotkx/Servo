@@ -1,6 +1,8 @@
 # Core
 pydantic>=2.0
-instructor>=1.0
+# instructor -- removed
+llama-cpp-python
+outlines>=1.0
 openai>=1.0
 pyyaml>=6.0
 python-dotenv>=1.0
@@ -13,3 +15,7 @@ sentence-transformers>=2.0
 # Development
 pytest>=8.0
 pytest-asyncio>=0.23
+
+# Server
+fastapi>=0.100.0
+uvicorn>=0.20.0

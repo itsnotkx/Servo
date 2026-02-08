@@ -4,10 +4,11 @@ A Python-based prompt classification and routing system that directs prompts to 
 
 ## Overview
 
+
 ```
 ┌─────────────┐     ┌────────────┐     ┌─────────┐     ┌──────────────┐
 │   Prompt    │ ──▶ │  Chunker   │ ──▶ │Classifier│ ──▶ │    Router    │
-│             │     │(if needed) │     │(Qwen3-14B)│    │(Tier-based)  │
+│             │     │(if needed) │     │(Outlines) │    │(Tier-based)  │
 └─────────────┘     └────────────┘     └─────────┘     └──────────────┘
                                                               │
                                                               ▼
@@ -16,7 +17,7 @@ A Python-based prompt classification and routing system that directs prompts to 
 
 The workflow:
 1. **Chunks** long prompts using LlamaIndex (semantic or recursive splitting)
-2. **Classifies** prompt complexity using Instructor + Qwen3-14B
+2. **Classifies** prompt complexity using Outlines + Qwen3-14B (Llama.cpp)
 3. **Routes** to the appropriate model tier
 
 ## Installation
@@ -138,11 +139,64 @@ inference/
 | `list_workflows()` | List available workflows |
 | `reload_config()` | Reload configuration |
 
+## API Server
+
+To run the inference logic as a REST API server:
+
+1. Install server dependencies:
+```bash
+pip install fastapi uvicorn
+```
+
+2. Start the server:
+```bash
+uvicorn inference.server:app --reload --port 8000
+```
+
+3. Interact with the API:
+
+**Process a Prompt (Classification + Routing)**
+```bash
+POST http://localhost:8000/process
+Content-Type: application/json
+
+{
+  "prompt": "Explain calling mechanics in Python",
+  "workflow": "default",
+  "use_quick_classify": false
+}
+```
+
+**Response:**
+```json
+{
+  "classification": {
+    "complexity": "code",
+    "confidence": 0.95,
+    ...
+  },
+  "target_model": "qwen-14b",
+  ...
+}
+```
+
+**Classify Only**
+```bash
+POST http://localhost:8000/classify
+Content-Type: application/json
+
+{
+  "prompt": "What is the capital of France?",
+  "use_quick": true
+}
+```
+
 ## Dependencies
 
 - **pydantic**: Structured output models
-- **instructor**: LLM structured output
-- **openai**: API client for Llama.cpp endpoint
+- **pydantic**: Structured output models
+- **outlines**: Structured generation and LLM validation
+- **llama-cpp-python**: Local inference backend
 - **llama-index**: Semantic/recursive chunking
 - **python-dotenv**: Environment configuration
 

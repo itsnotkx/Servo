@@ -73,10 +73,14 @@ class ConfigLoader:
         # Classifier settings from environment
         self._config.setdefault("classifier", {})
         
-        if os.getenv("CLASSIFIER_ENDPOINT"):
-            self._config["classifier"]["endpoint"] = os.getenv("CLASSIFIER_ENDPOINT")
-        if os.getenv("CLASSIFIER_MODEL"):
-            self._config["classifier"]["model"] = os.getenv("CLASSIFIER_MODEL")
+        if os.getenv("MODEL_PATH"):
+            self._config["classifier"]["model_path"] = os.getenv("MODEL_PATH")
+        if os.getenv("N_GPU_LAYERS"):
+            self._config["classifier"]["n_gpu_layers"] = int(os.getenv("N_GPU_LAYERS"))
+        if os.getenv("N_CTX"):
+            self._config["classifier"]["n_ctx"] = int(os.getenv("N_CTX"))
+        if os.getenv("N_BATCH"):
+            self._config["classifier"]["n_batch"] = int(os.getenv("N_BATCH"))
         if os.getenv("CLASSIFIER_TEMPERATURE"):
             self._config["classifier"]["temperature"] = float(os.getenv("CLASSIFIER_TEMPERATURE"))
         
