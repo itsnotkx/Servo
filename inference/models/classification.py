@@ -7,18 +7,15 @@ from typing import Optional
 
 class ComplexityLevel(str, Enum):
     """Complexity levels for prompt classification."""
-    
-    SIMPLE = "simple"          # Fact retrieval, simple QA
-    MEDIUM = "medium"          # General conversation, moderate reasoning
-    COMPLEX = "complex"        # Multi-step reasoning, analysis
-    LONG_CONTEXT = "long_context"  # Requires extended context window
-    CODE = "code"              # Code generation/analysis
-    CREATIVE = "creative"      # Creative writing tasks
+
+    SIMPLE = "simple"      # Fact retrieval, simple QA, lightweight requests
+    THINKING = "thinking"  # General reasoning and synthesis tasks
+    COMPLEX = "complex"    # Multi-step reasoning, deep analysis, advanced tasks
 
 
 class ClassificationResult(BaseModel):
     """Structured classification output from the classifier model."""
-    
+
     complexity: ComplexityLevel = Field(
         description="The complexity level of the prompt"
     )
@@ -37,14 +34,14 @@ class ClassificationResult(BaseModel):
         le=1.0,
         description="Classification confidence score"
     )
-    
+
     class Config:
         use_enum_values = True
 
 
 class ChunkMetadata(BaseModel):
     """Metadata for a processed chunk."""
-    
+
     chunk_index: int = Field(description="Index of this chunk in the sequence")
     total_chunks: int = Field(description="Total number of chunks")
     start_char: int = Field(description="Starting character position in original text")
@@ -57,7 +54,7 @@ class ChunkMetadata(BaseModel):
 
 class ProcessingResult(BaseModel):
     """Complete result from the right-sizing workflow."""
-    
+
     classification: ClassificationResult = Field(
         description="Classification result for the prompt"
     )

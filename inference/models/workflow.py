@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional
 
 class WorkflowStep(BaseModel):
     """Configuration for a single workflow step."""
-    
+
     name: str = Field(description="Name of the workflow step")
     enabled: bool = Field(default=True, description="Whether this step is enabled")
     config: Dict[str, Any] = Field(
@@ -17,17 +17,17 @@ class WorkflowStep(BaseModel):
 
 class WorkflowConfig(BaseModel):
     """Complete workflow configuration."""
-    
+
     name: str = Field(description="Name of the workflow")
     steps: List[WorkflowStep] = Field(
         default_factory=list,
         description="Ordered list of workflow steps"
     )
     fallback_tier: str = Field(
-        default="medium",
+        default="thinking",
         description="Default tier to use if classification fails"
     )
-    
+
     # Feature flags
     preprocessor: bool = Field(
         default=True,
@@ -49,7 +49,7 @@ class WorkflowConfig(BaseModel):
 
 class TierConfig(BaseModel):
     """Configuration for a model tier."""
-    
+
     description: str = Field(description="Human-readable tier description")
     model: Optional[str] = Field(
         default=None,
@@ -59,7 +59,7 @@ class TierConfig(BaseModel):
 
 class RoutingConfig(BaseModel):
     """Routing configuration with tier definitions."""
-    
+
     tiers: Dict[str, TierConfig] = Field(
         default_factory=dict,
         description="Tier name to configuration mapping"
@@ -68,7 +68,7 @@ class RoutingConfig(BaseModel):
 
 class ChunkingConfig(BaseModel):
     """Chunking configuration."""
-    
+
     strategy: str = Field(
         default="semantic",
         description="Chunking strategy: 'semantic' or 'recursive'"
@@ -89,7 +89,7 @@ class ChunkingConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """Top-level application configuration."""
-    
+
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     workflows: Dict[str, WorkflowConfig] = Field(default_factory=dict)

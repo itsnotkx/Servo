@@ -1,21 +1,19 @@
-"""Main workflow orchestrator for the right-sizing pipeline."""
+"""Main orchestrator for the right-sizing pipeline."""
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List, Tuple
 
 from .config_loader import ConfigLoader
-from .workflow_registry import WorkflowRegistry
 from ..services.classifier import PromptClassifier
 from ..services.router import LLMRouter
 from ..services.chunker import ChunkingService
-from ..models.classification import ProcessingResult, ClassificationResult, ChunkMetadata
+from ..models.classification import ProcessingResult, ClassificationResult, ChunkMetadata, ComplexityLevel
 
 
 class WorkflowOrchestrator:
     """
     Orchestrates the right-sizing workflow.
     
-    Coordinates classification, chunking, and routing to process prompts
-    through the appropriate pipeline based on complexity.
+    Coordinates classification, chunking, and routing to process prompts.
     """
     
     def __init__(
@@ -38,38 +36,27 @@ class WorkflowOrchestrator:
         self.classifier = PromptClassifier(self.config.get("classifier", {}))
         self.router = LLMRouter(self.config.get("routing", {}))
         self.chunker = ChunkingService(self.config.get("chunking", {}))
-        
-        # Load workflow configurations
-        self.workflows = self.config.get("workflows", {"default": {}})
     
     def process(
         self, 
         prompt: str, 
-        workflow_name: str = "default",
         use_quick_classify: bool = False
     ) -> ProcessingResult:
         """
-        Process a prompt through the right-sizing workflow.
+        Process a prompt through the right-sizing pipeline.
         
         Args:
             prompt: The user prompt to process.
-            workflow_name: Name of the workflow to use.
             use_quick_classify: Use heuristic classification instead of model.
             
         Returns:
             ProcessingResult with classification, routing, and chunking info.
         """
-        workflow_config = self.workflows.get(workflow_name, {})
-        
-        # Step 1: Check if chunking is needed
+        # Step 1: Check if chunking is needed (auto mode assumed)
         chunks: Optional[List[str]] = None
         chunk_metadata: Optional[List[ChunkMetadata]] = None
         
-        chunker_mode = workflow_config.get("chunker", "auto")
-        
-        if chunker_mode == "always" or (
-            chunker_mode == "auto" and self.chunker.should_chunk(prompt)
-        ):
+        if self.chunker.should_chunk(prompt):
             chunks, chunk_metadata = self.chunker.chunk(prompt)
         
         # Step 2: Classify the prompt (use first chunk if chunked)
@@ -83,13 +70,14 @@ class WorkflowOrchestrator:
                 reasoning="Quick heuristic classification",
                 requires_chunking=chunks is not None,
                 suggested_model_tier=complexity.value,
-                confidence=0.7  # Lower confidence for heuristics
+                confidence=0.7
             )
         else:
             # Use model-based classification
             classification = self.classifier.classify(sample)
-            # Update chunking flag based on actual chunking
-            classification.requires_chunking = chunks is not None
+            # Update chunking flag based on actual chunking if not already set correctly
+            if chunks is not None:
+                classification.requires_chunking = True
         
         # Step 3: Route to appropriate model
         target_model = self.router.route(classification)
@@ -101,24 +89,6 @@ class WorkflowOrchestrator:
             chunk_metadata=chunk_metadata,
             requires_aggregation=chunks is not None and len(chunks) > 1
         )
-    
-    def process_with_custom_workflow(
-        self,
-        prompt: str,
-        workflow_name: str
-    ) -> Dict[str, Any]:
-        """
-        Process using a registered custom workflow.
-        
-        Args:
-            prompt: The user prompt to process.
-            workflow_name: Name of the registered custom workflow.
-            
-        Returns:
-            Result from the custom workflow function.
-        """
-        workflow_fn = WorkflowRegistry.get(workflow_name)
-        return workflow_fn(prompt, self.config)
     
     def classify_only(self, prompt: str, use_quick: bool = False) -> ClassificationResult:
         """
@@ -154,7 +124,7 @@ class WorkflowOrchestrator:
         """
         return self.router.route(classification)
     
-    def chunk_only(self, text: str) -> tuple[List[str], List[ChunkMetadata]]:
+    def chunk_only(self, text: str) -> Tuple[List[str], List[ChunkMetadata]]:
         """
         Chunk text without classification.
         
@@ -174,10 +144,3 @@ class WorkflowOrchestrator:
         self.classifier = PromptClassifier(self.config.get("classifier", {}))
         self.router = LLMRouter(self.config.get("routing", {}))
         self.chunker = ChunkingService(self.config.get("chunking", {}))
-        self.workflows = self.config.get("workflows", {"default": {}})
-    
-    def get_available_workflows(self) -> List[str]:
-        """Get list of available workflow names (config + registered)."""
-        configured = list(self.workflows.keys())
-        registered = WorkflowRegistry.list_workflows()
-        return list(set(configured + registered))

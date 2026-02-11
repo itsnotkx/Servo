@@ -3,16 +3,10 @@ routing:
   tiers:
     simple:
       description: "Fact retrieval, simple QA"
-    medium:
-      description: "General tasks, moderate reasoning"
+    thinking:
+      description: "General reasoning and synthesis"
     complex:
-      description: "Multi-step reasoning, analysis"
-    long_context:
-      description: "Extended context handling"
-    code:
-      description: "Code generation and analysis"
-    creative:
-      description: "Creative writing tasks"
+      description: "Multi-step reasoning, deep analysis"
 
 # Default chunking (can be overridden via .env.local)
 chunking:
@@ -20,11 +14,3 @@ chunking:
   max_chunk_size: 4096
   overlap: 200
   threshold_tokens: 8000
-
-# Workflow definitions
-workflows:
-  default:
-    preprocessor: true
-    classifier: true
-    chunker: auto
-    router: true

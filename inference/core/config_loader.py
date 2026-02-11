@@ -65,8 +65,6 @@ class ConfigLoader:
             self._config["routing"] = {"tiers": {}}
         if "chunking" not in self._config:
             self._config["chunking"] = {}
-        if "workflows" not in self._config:
-            self._config["workflows"] = {"default": {}}
     
     def _apply_env_overrides(self) -> None:
         """Apply environment variable overrides to configuration."""
