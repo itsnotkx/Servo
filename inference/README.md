@@ -122,8 +122,7 @@ inference/
 │   ├── config_loader.py
 │   └── orchestrator.py
 ├── models/
-│   ├── classification.py
-│   └── workflow.py
+│   └── classification.py
 └── services/
     ├── classifier.py
     ├── router.py
