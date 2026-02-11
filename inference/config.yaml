@@ -1,0 +1,16 @@
+# Tier descriptions (models configured via .env.local)
+routing:
+  tiers:
+    simple:
+      description: "Fact retrieval, simple QA"
+    thinking:
+      description: "General reasoning and synthesis"
+    complex:
+      description: "Multi-step reasoning, deep analysis"
+
+# Default chunking (can be overridden via .env.local)
+chunking:
+  strategy: "semantic"
+  max_chunk_size: 4096
+  overlap: 200
+  threshold_tokens: 8000
