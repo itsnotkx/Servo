@@ -133,3 +133,18 @@ class ConfigLoader:
         if not self._loaded:
             self.load()
         return self._config
+
+    def validate_required_env(self, required_vars: list[str]) -> None:
+        """
+        Validate required environment variables are available.
+
+        Args:
+            required_vars: Environment variable names that must exist.
+        """
+        if not self._loaded:
+            self.load()
+
+        missing = [var for var in required_vars if not os.getenv(var)]
+        if missing:
+            missing_display = ", ".join(missing)
+            raise ValueError(f"Missing required environment variables: {missing_display}")

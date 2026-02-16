@@ -1,23 +1,17 @@
 """Classification models using Pydantic for structured output."""
 
-from enum import Enum
+from typing import Any, Optional
 from pydantic import BaseModel, Field
-from typing import Optional
-
-
-class ComplexityLevel(str, Enum):
-    """Complexity levels for prompt classification."""
-
-    SIMPLE = "simple"      # Fact retrieval, simple QA, lightweight requests
-    THINKING = "thinking"  # General reasoning and synthesis tasks
-    COMPLEX = "complex"    # Multi-step reasoning, deep analysis, advanced tasks
 
 
 class ClassificationResult(BaseModel):
     """Structured classification output from the classifier model."""
 
-    complexity: ComplexityLevel = Field(
-        description="The complexity level of the prompt"
+    category_id: str = Field(
+        description="The selected category identifier"
+    )
+    category_name: str = Field(
+        description="The selected category display name"
     )
     reasoning: str = Field(
         description="Brief explanation for the classification decision"
@@ -26,17 +20,11 @@ class ClassificationResult(BaseModel):
         default=False,
         description="Whether the input is too long and requires chunking"
     )
-    suggested_model_tier: str = Field(
-        description="Recommended model tier based on classification"
-    )
     confidence: float = Field(
         ge=0.0,
         le=1.0,
         description="Classification confidence score"
     )
-
-    class Config:
-        use_enum_values = True
 
 
 class ChunkMetadata(BaseModel):
@@ -60,6 +48,13 @@ class ProcessingResult(BaseModel):
     )
     target_model: str = Field(
         description="Selected model for processing"
+    )
+    selected_category: dict[str, Any] = Field(
+        description="Resolved category metadata used for routing"
+    )
+    llm_response: Optional[str] = Field(
+        default=None,
+        description="Provider response generated from the routed model"
     )
     chunks: Optional[list[str]] = Field(
         default=None,

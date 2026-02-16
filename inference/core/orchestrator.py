@@ -1,12 +1,14 @@
 """Main orchestrator for the right-sizing pipeline."""
 
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, List, Tuple
 
 from .config_loader import ConfigLoader
+from ..configs.user_classification_profiles import get_user_profile
 from ..services.classifier import PromptClassifier
 from ..services.router import LLMRouter
 from ..services.chunker import ChunkingService
-from ..models.classification import ProcessingResult, ClassificationResult, ChunkMetadata, ComplexityLevel
+from ..services.provider_google_ai_studio import GoogleAIStudioProvider
+from ..models.classification import ProcessingResult, ClassificationResult, ChunkMetadata
 
 
 class WorkflowOrchestrator:
@@ -36,10 +38,12 @@ class WorkflowOrchestrator:
         self.classifier = PromptClassifier(self.config.get("classifier", {}))
         self.router = LLMRouter(self.config.get("routing", {}))
         self.chunker = ChunkingService(self.config.get("chunking", {}))
+        self.google_provider = GoogleAIStudioProvider()
     
     def process(
         self, 
         prompt: str, 
+        user_id: str,
         use_quick_classify: bool = False
     ) -> ProcessingResult:
         """
@@ -47,11 +51,14 @@ class WorkflowOrchestrator:
         
         Args:
             prompt: The user prompt to process.
+            user_id: User identifier for category profile lookup.
             use_quick_classify: Use heuristic classification instead of model.
             
         Returns:
             ProcessingResult with classification, routing, and chunking info.
         """
+        profile = get_user_profile(user_id)
+
         # Step 1: Check if chunking is needed (auto mode assumed)
         chunks: Optional[List[str]] = None
         chunk_metadata: Optional[List[ChunkMetadata]] = None
@@ -64,65 +71,66 @@ class WorkflowOrchestrator:
         
         if use_quick_classify:
             # Use heuristic classification
-            complexity = self.classifier.quick_classify(sample)
-            classification = ClassificationResult(
-                complexity=complexity,
-                reasoning="Quick heuristic classification",
-                requires_chunking=chunks is not None,
-                suggested_model_tier=complexity.value,
-                confidence=0.7
-            )
+            classification = self.classifier.quick_classify(sample, profile)
+            classification.requires_chunking = chunks is not None
         else:
             # Use model-based classification
-            classification = self.classifier.classify(sample)
+            classification = self.classifier.classify(sample, profile)
             # Update chunking flag based on actual chunking if not already set correctly
             if chunks is not None:
                 classification.requires_chunking = True
         
-        # Step 3: Route to appropriate model
-        target_model = self.router.route(classification)
+        # Step 3: Route to appropriate category/model
+        selected_category = self.router.route(classification, profile)
+        target_model = selected_category.model_id
+
+        # Step 4: Invoke provider with original prompt
+        self.config_loader.validate_required_env(["GOOGLE_AI_STUDIO_API_KEY"])
+        llm_response = self.google_provider.generate(prompt, selected_category)
         
         return ProcessingResult(
             classification=classification,
             target_model=target_model,
+            selected_category=selected_category.model_dump(),
+            llm_response=llm_response,
             chunks=chunks,
             chunk_metadata=chunk_metadata,
             requires_aggregation=chunks is not None and len(chunks) > 1
         )
     
-    def classify_only(self, prompt: str, use_quick: bool = False) -> ClassificationResult:
+    def classify_only(self, prompt: str, user_id: str, use_quick: bool = False) -> ClassificationResult:
         """
         Classify a prompt without routing.
         
         Args:
             prompt: The prompt to classify.
+            user_id: User identifier for category profile lookup.
             use_quick: Use heuristic classification.
             
         Returns:
             ClassificationResult.
         """
+        profile = get_user_profile(user_id)
         if use_quick:
-            complexity = self.classifier.quick_classify(prompt)
-            return ClassificationResult(
-                complexity=complexity,
-                reasoning="Quick heuristic classification",
-                requires_chunking=self.chunker.should_chunk(prompt),
-                suggested_model_tier=complexity.value,
-                confidence=0.7
-            )
-        return self.classifier.classify(prompt)
+            classification = self.classifier.quick_classify(prompt, profile)
+            classification.requires_chunking = self.chunker.should_chunk(prompt)
+            return classification
+        return self.classifier.classify(prompt, profile)
     
-    def route_only(self, classification: ClassificationResult) -> str:
+    def route_only(self, user_id: str, classification: ClassificationResult) -> str:
         """
         Route a classification to a model.
         
         Args:
+            user_id: User identifier for category profile lookup.
             classification: The classification result.
             
         Returns:
             Target model name.
         """
-        return self.router.route(classification)
+        profile = get_user_profile(user_id)
+        selected_category = self.router.route(classification, profile)
+        return selected_category.model_id
     
     def chunk_only(self, text: str) -> Tuple[List[str], List[ChunkMetadata]]:
         """
@@ -144,3 +152,4 @@ class WorkflowOrchestrator:
         self.classifier = PromptClassifier(self.config.get("classifier", {}))
         self.router = LLMRouter(self.config.get("routing", {}))
         self.chunker = ChunkingService(self.config.get("chunking", {}))
+        self.google_provider = GoogleAIStudioProvider()

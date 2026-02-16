@@ -1,12 +1,6 @@
-# Tier descriptions (models configured via .env.local)
-routing:
-  tiers:
-    simple:
-      description: "Fact retrieval, simple QA"
-    thinking:
-      description: "General reasoning and synthesis"
-    complex:
-      description: "Multi-step reasoning, deep analysis"
+# Routing is now category-based and profile-driven.
+# Categories are hardcoded in inference/configs/user_classification_profiles.py
+routing: {}
 
 # Default chunking (can be overridden via .env.local)
 chunking:
