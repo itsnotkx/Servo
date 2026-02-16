@@ -1,0 +1,30 @@
+{
+  "name": "servo-sdk",
+  "version": "0.1.0",
+  "description": "JavaScript/TypeScript SDK for the Servo backend (routing/classification).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "servo",
+    "sdk",
+    "ai",
+    "routing",
+    "classification"
+  ],
+  "author": "Servo SDK Contributors",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
