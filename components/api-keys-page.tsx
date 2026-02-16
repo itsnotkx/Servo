@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MoreHorizontal, Plus, Copy, Trash2, RotateCw } from 'lucide-react'
@@ -10,12 +10,31 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface ApiKey {
   id: string
   name: string
   key: string
   maskedKey: string
+  model: string
   tags: string[]
   cost: number
   requests: number
@@ -30,6 +49,7 @@ const apiKeys: ApiKey[] = [
     name: 'Production API Key',
     key: 'sk_live_abc123def456',
     maskedKey: 'sk_live_****6',
+    model: 'GPT-4',
     tags: ['production', 'critical'],
     cost: 1240,
     requests: 2800,
@@ -42,6 +62,7 @@ const apiKeys: ApiKey[] = [
     name: 'Development API Key',
     key: 'sk_test_xyz789uvw123',
     maskedKey: 'sk_test_****3',
+    model: 'GPT-3.5',
     tags: ['development'],
     cost: 340,
     requests: 1200,
@@ -54,6 +75,7 @@ const apiKeys: ApiKey[] = [
     name: 'Staging API Key',
     key: 'sk_stage_qwe456rty789',
     maskedKey: 'sk_stage_***9',
+    model: 'Claude',
     tags: ['staging', 'testing'],
     cost: 120,
     requests: 600,
@@ -64,7 +86,31 @@ const apiKeys: ApiKey[] = [
 ]
 
 export default function ApiKeysPage() {
-  const [keys, setKeys] = useState<ApiKey[]>(apiKeys)
+  const [keys, setKeys] = useState<ApiKey[]>(() => {
+    // Initialize from localStorage if available
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('apiKeys')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.error('Failed to parse saved keys:', e)
+        }
+      }
+    }
+    return apiKeys
+  })
+  const [open, setOpen] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [newKeyModel, setNewKeyModel] = useState('')
+  const [newKeyTags, setNewKeyTags] = useState('')
+
+  // Save to localStorage whenever keys change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('apiKeys', JSON.stringify(keys))
+    }
+  }, [keys])
 
   const handleCopy = (key: string) => {
     navigator.clipboard.writeText(key)
@@ -75,6 +121,45 @@ export default function ApiKeysPage() {
     setKeys(keys.filter((k) => k.id !== id))
   }
 
+  const handleAddKey = () => {
+    if (!newKeyName || !newKeyModel) {
+      return
+    }
+
+    const generatedKey = `sk_${newKeyModel.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Math.random().toString(36).substring(2, 15)}`
+    const lastFour = generatedKey.slice(-4)
+    
+    const tags = newKeyTags
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+
+    // Generate unique ID by finding max existing ID and adding 1
+    const maxId = keys.length > 0 
+      ? Math.max(...keys.map(k => parseInt(k.id) || 0))
+      : 0
+    
+    const newKey: ApiKey = {
+      id: String(maxId + 1),
+      name: newKeyName,
+      key: generatedKey,
+      maskedKey: `${generatedKey.split('_')[0]}_${generatedKey.split('_')[1]}_****${lastFour}`,
+      model: newKeyModel,
+      tags,
+      cost: 0,
+      requests: 0,
+      createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      lastUsed: 'Never',
+      status: 'active',
+    }
+
+    setKeys([...keys, newKey])
+    setOpen(false)
+    setNewKeyName('')
+    setNewKeyModel('')
+    setNewKeyTags('')
+  }
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -83,10 +168,67 @@ export default function ApiKeysPage() {
           <h2 className="text-3xl font-bold text-foreground mb-2">API Keys</h2>
           <p className="text-muted-foreground">Manage and monitor your API keys with tagging and cost tracking</p>
         </div>
-        <Button className="gap-2 bg-primary hover:bg-primary text-primary-foreground">
-          <Plus className="w-4 h-4" />
-          New Key
-        </Button>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2 bg-primary hover:bg-primary text-primary-foreground">
+              <Plus className="w-4 h-4" />
+              New Key
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New API Key</DialogTitle>
+              <DialogDescription>
+                Generate a new API key for a specific model. Add tags to organize your keys.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Key Name</Label>
+                <Input
+                  id="name"
+                  placeholder="e.g., Production API Key"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="model">Model</Label>
+                <Select value={newKeyModel} onValueChange={setNewKeyModel}>
+                  <SelectTrigger id="model">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Gemma 27B">Gemma 27B</SelectItem>
+                    <SelectItem value="Claude-Opus-4.5">Claude-Opus-4.5</SelectItem>
+                    <SelectItem value="GPT-4">GPT-4</SelectItem>
+                    <SelectItem value="GPT-3.5">GPT-3.5</SelectItem>
+                    <SelectItem value="Claude">Claude</SelectItem>
+                    <SelectItem value="Claude-3-Opus">Claude 3 Opus</SelectItem>
+                    <SelectItem value="Claude-3-Sonnet">Claude 3 Sonnet</SelectItem>
+                    <SelectItem value="Gemini-3-Pro">Gemini-3-Pro</SelectItem>
+                    <SelectItem value="Llama-2">Llama 2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="tags">Tags</Label>
+                <Input
+                  id="tags"
+                  placeholder="e.g., production, critical (comma-separated)"
+                  value={newKeyTags}
+                  onChange={(e) => setNewKeyTags(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddKey}>Create Key</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Stats Cards */}
@@ -113,6 +255,7 @@ export default function ApiKeysPage() {
               <tr className="border-b border-border bg-secondary bg-opacity-50">
                 <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key Name</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key ID</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Model</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tags</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Requests</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cost</th>
@@ -143,11 +286,16 @@ export default function ApiKeysPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
+                    <span className="inline-block bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs font-medium">
+                      {key.model}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
                     <div className="flex gap-1 flex-wrap">
                       {key.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="inline-block bg-primary bg-opacity-20 text-primary px-2 py-1 rounded text-xs font-medium"
+                          className="inline-block bg-purple-500/20 text-purple-400 px-2 py-1 rounded text-xs font-medium"
                         >
                           {tag}
                         </span>
