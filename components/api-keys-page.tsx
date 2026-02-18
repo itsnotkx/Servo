@@ -134,13 +134,8 @@ export default function ApiKeysPage() {
       .map(tag => tag.trim())
       .filter(tag => tag.length > 0)
 
-    // Generate unique ID by finding max existing ID and adding 1
-    const maxId = keys.length > 0 
-      ? Math.max(...keys.map(k => parseInt(k.id) || 0))
-      : 0
-    
     const newKey: ApiKey = {
-      id: String(maxId + 1),
+      id: crypto.randomUUID(),
       name: newKeyName,
       key: generatedKey,
       maskedKey: `${generatedKey.split('_')[0]}_${generatedKey.split('_')[1]}_****${lastFour}`,
