@@ -2,6 +2,7 @@
 
 import { BarChart3, CreditCard, Key, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useUser, useClerk } from '@clerk/nextjs'
 
 interface SidebarProps {
   activePage: string
@@ -9,12 +10,17 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activePage, setActivePage }: SidebarProps) {
+  const { user } = useUser()
+  const { signOut } = useClerk()
+
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'api-keys', label: 'API Keys', icon: Key },
     { id: 'billing', label: 'Billing', icon: CreditCard },
     { id: 'settings', label: 'Settings', icon: Settings },
   ]
+
+  const email = user?.emailAddresses[0]?.emailAddress ?? ''
 
   return (
     <div className="w-64 border-r border-border bg-sidebar flex flex-col">
@@ -57,9 +63,13 @@ export default function Sidebar({ activePage, setActivePage }: SidebarProps) {
       <div className="p-4 border-t border-sidebar-border">
         <div className="bg-sidebar-accent bg-opacity-20 rounded-lg p-3 mb-4">
           <p className="text-xs text-sidebar-accent-foreground font-semibold mb-1">ACCOUNT</p>
-          <p className="text-sm text-sidebar-foreground truncate">your@startup.com</p>
+          <p className="text-sm text-sidebar-foreground truncate">{email}</p>
         </div>
-        <Button variant="outline" className="w-full text-sidebar-foreground border-sidebar-border hover:bg-sidebar-accent bg-transparent">
+        <Button
+          variant="outline"
+          className="w-full text-sidebar-foreground border-sidebar-border hover:bg-sidebar-accent bg-transparent"
+          onClick={() => signOut({ redirectUrl: '/' })}
+        >
           Sign Out
         </Button>
       </div>
