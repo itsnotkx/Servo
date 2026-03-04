@@ -11,14 +11,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-export interface TierNodeData {
+export interface Category {
   id: string
   name: string
   description: string
   model: string
+}
+
+export interface TierNodeData extends Category {
   isDefault: boolean
   availableModels: string[]
-  onUpdate: (id: string, field: string, value: string) => void
+  onUpdate: (id: string, field: keyof Category, value: string) => void
   onSetDefault: (id: string) => void
   onDelete: (id: string) => void
 }

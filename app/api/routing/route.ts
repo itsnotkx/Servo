@@ -2,6 +2,11 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+// NOTE: The frontend saves `model` (user-facing name from api_keys) while the Python
+// ClassificationCategory schema expects `model_id` (provider model ID), `provider`,
+// `endpoint`, and `request_defaults`. A mapping layer is needed before the inference
+// engine can consume DB-backed configs directly.
+
 const DEFAULT_CONFIG = {
   default_category_id: 'simple',
   categories: [
@@ -66,6 +71,14 @@ export async function PUT(request: Request) {
   )
   if (!validCategories) {
     return NextResponse.json({ error: 'Each category must have id and name' }, { status: 400 })
+  }
+
+  const categoryIds = (config.categories as { id: string }[]).map((c) => c.id)
+  if (!categoryIds.includes(config.default_category_id as string)) {
+    return NextResponse.json(
+      { error: 'default_category_id must match a category id' },
+      { status: 400 }
+    )
   }
 
   const { error } = await supabase

@@ -17,14 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Plus, Save } from 'lucide-react'
 import ClassifierNode from './nodes/classifier-node'
 import TierNode from './nodes/tier-node'
-import type { TierNodeData } from './nodes/tier-node'
-
-interface Category {
-  id: string
-  name: string
-  description: string
-  model: string
-}
+import type { TierNodeData, Category } from './nodes/tier-node'
 
 interface RoutingConfig {
   default_category_id: string
@@ -89,7 +82,7 @@ export default function RoutingPage() {
   const [loadError, setLoadError] = useState(false)
 
   // Stable handlers — use functional setConfig so they never go stale
-  const handleUpdate = useCallback((id: string, field: string, value: string) => {
+  const handleUpdate = useCallback((id: string, field: keyof Category, value: string) => {
     setConfig((prev) => {
       if (!prev) return prev
       return {
@@ -231,6 +224,8 @@ export default function RoutingPage() {
           fitView
           fitViewOptions={{ padding: 0.3 }}
           proOptions={{ hideAttribution: true }}
+          nodesConnectable={false}
+          edgesReconnectable={false}
         >
           <Background color="hsl(var(--border))" />
           <Controls className="!bg-card !border-border [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground" />
