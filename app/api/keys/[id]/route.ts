@@ -13,14 +13,19 @@ export async function DELETE(
 
   const { id } = await params
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('api_keys')
     .delete()
     .eq('id', id)
     .eq('user_id', userId) // scoped to user — can't delete another user's key
+    .select('id')
 
   if (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
   return new NextResponse(null, { status: 204 })
