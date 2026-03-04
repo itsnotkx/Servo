@@ -1,6 +1,7 @@
 import DashboardOverview from './dashboard-overview'
 import ApiKeysPage from './api-keys-page'
 import BillingPage from './billing-page'
+import RoutingPage from './routing-page'
 import SettingsPage from './settings-page'
 
 interface DashboardContentProps {
@@ -12,6 +13,7 @@ export default function DashboardContent({ page }: DashboardContentProps) {
     <div className="flex-1 overflow-auto bg-background">
       {page === 'dashboard' && <DashboardOverview />}
       {page === 'api-keys' && <ApiKeysPage />}
+      {page === 'routing' && <RoutingPage />}
       {page === 'billing' && <BillingPage />}
       {page === 'settings' && <SettingsPage />}
     </div>
