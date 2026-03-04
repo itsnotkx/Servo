@@ -115,9 +115,11 @@ export default function RoutingPage() {
     ])
       .then(([routingConfig, keys]) => {
         setConfig(routingConfig as RoutingConfig)
+        const seen = new Set<string>()
         const models = (keys as { model: string; name: string; status: string }[])
-          .filter((k) => k.status === 'active')
+          .filter((k) => k.status === 'active' && k.model)
           .map((k): ModelOption => ({ model: k.model, keyName: k.name }))
+          .filter((m) => (seen.has(m.model) ? false : (seen.add(m.model), true)))
         setAvailableModels(models)
       })
       .catch(() => setLoadError(true))

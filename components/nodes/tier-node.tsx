@@ -89,8 +89,8 @@ export default function TierNode({ data }: { data: TierNodeData }) {
             <SelectValue placeholder="Select model" />
           </SelectTrigger>
           <SelectContent>
-            {data.availableModels.map((m) => (
-              <SelectItem key={`${m.model}-${m.keyName}`} value={m.model} className="text-xs">
+            {data.availableModels.map((m, i) => (
+              <SelectItem key={m.model ?? i} value={m.model ?? ''} className="text-xs">
                 {m.model} <span className="text-muted-foreground">[{m.keyName}]</span>
               </SelectItem>
             ))}
