@@ -16,7 +16,7 @@ export async function GET() {
     .order('created_at', { ascending: false })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   return NextResponse.json(data)
@@ -28,10 +28,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json()
-  const { name, model, tags } = body
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const { name, model, tags } = body as { name: unknown; model: unknown; tags: unknown }
 
-  if (!name || !model) {
+  if (typeof name !== 'string' || !name.trim() || typeof model !== 'string' || !model.trim()) {
     return NextResponse.json({ error: 'name and model are required' }, { status: 400 })
   }
 
@@ -42,18 +47,18 @@ export async function POST(request: Request) {
     .from('api_keys')
     .insert({
       user_id: userId,
-      name,
+      name: (name as string).trim(),
       key,
       key_prefix: 'sk_live_',
       key_suffix: raw.slice(-4),
-      model,
+      model: (model as string).trim(),
       tags: Array.isArray(tags) ? tags : [],
     })
     .select('id, name, key_prefix, key_suffix, model, tags, requests, cost, status, created_at, last_used')
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   // Full key returned once only — never returned again after this
