@@ -1,6 +1,6 @@
 // components/nodes/tier-node.tsx
 import { Handle, Position } from '@xyflow/react'
-import { Trash2, Star } from 'lucide-react'
+import { GripVertical, Trash2, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -35,8 +35,13 @@ export default function TierNode({ data }: { data: TierNodeData }) {
     >
       <Handle type="target" position={Position.Left} className="!bg-accent !border-border" />
 
+      {/* Drag handle */}
+      <div className="tier-drag-handle flex justify-center -mt-1 mb-2 cursor-grab active:cursor-grabbing">
+        <GripVertical className="w-4 h-4 text-muted-foreground/30" />
+      </div>
+
       {/* Header row: name input + star + delete */}
-      <div className="flex items-center gap-2 mb-3">
+      <div className="nodrag flex items-center gap-2 mb-3">
         <Input
           value={data.name}
           onChange={(e) => data.onUpdate(data.id, 'name', e.target.value)}
@@ -70,7 +75,7 @@ export default function TierNode({ data }: { data: TierNodeData }) {
       />
 
       {/* Model dropdown + Set default button */}
-      <div className="flex items-center gap-2">
+      <div className="nodrag flex items-center gap-2">
         <Select
           value={data.model || ''}
           onValueChange={(v) => data.onUpdate(data.id, 'model', v)}

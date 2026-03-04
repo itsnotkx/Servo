@@ -33,7 +33,8 @@ const NODE_TYPES: NodeTypes = {
 function buildNodes(
   config: RoutingConfig,
   availableModels: string[],
-  handlers: Pick<TierNodeData, 'onUpdate' | 'onSetDefault' | 'onDelete'>
+  handlers: Pick<TierNodeData, 'onUpdate' | 'onSetDefault' | 'onDelete'>,
+  existingPositions: Map<string, { x: number; y: number }>
 ): Node[] {
   const classifierY = Math.max(0, (config.categories.length * 180) / 2 - 40)
 
@@ -48,7 +49,9 @@ function buildNodes(
   const tierNodes: Node[] = config.categories.map((cat, i) => ({
     id: cat.id,
     type: 'tierNode',
-    position: { x: 350, y: i * 180 },
+    // Preserve user-dragged position; fall back to default layout for new nodes
+    position: existingPositions.get(cat.id) ?? { x: 350, y: i * 180 },
+    dragHandle: '.tier-drag-handle',
     data: {
       ...cat,
       isDefault: cat.id === config.default_category_id,
@@ -122,16 +125,19 @@ export default function RoutingPage() {
       .catch(() => setLoadError(true))
   }, [])
 
-  // Rebuild ReactFlow nodes/edges whenever config or models change
+  // Rebuild ReactFlow nodes/edges whenever config or models change,
+  // preserving any positions the user has dragged nodes to.
   useEffect(() => {
     if (!config) return
-    setNodes(
-      buildNodes(config, availableModels, {
-        onUpdate: handleUpdate,
-        onSetDefault: handleSetDefault,
-        onDelete: handleDelete,
-      })
-    )
+    setNodes((existing) => {
+      const existingPositions = new Map(existing.map((n) => [n.id, n.position]))
+      return buildNodes(
+        config,
+        availableModels,
+        { onUpdate: handleUpdate, onSetDefault: handleSetDefault, onDelete: handleDelete },
+        existingPositions
+      )
+    })
     setEdges(buildEdges(config.categories))
   }, [config, availableModels, setNodes, setEdges, handleUpdate, handleSetDefault, handleDelete])
 
@@ -225,6 +231,7 @@ export default function RoutingPage() {
           proOptions={{ hideAttribution: true }}
           nodesConnectable={false}
           edgesReconnectable={false}
+          selectionOnDrag={false}
         >
           <Background color="hsl(var(--border))" />
           <Controls className="!bg-card !border-border [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground" />
