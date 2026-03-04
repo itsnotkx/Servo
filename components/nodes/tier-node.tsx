@@ -18,9 +18,14 @@ export interface Category {
   model: string
 }
 
+export interface ModelOption {
+  model: string
+  keyName: string
+}
+
 export interface TierNodeData extends Category {
   isDefault: boolean
-  availableModels: string[]
+  availableModels: ModelOption[]
   onUpdate: (id: string, field: keyof Category, value: string) => void
   onSetDefault: (id: string) => void
   onDelete: (id: string) => void
@@ -85,8 +90,8 @@ export default function TierNode({ data }: { data: TierNodeData }) {
           </SelectTrigger>
           <SelectContent>
             {data.availableModels.map((m) => (
-              <SelectItem key={m} value={m} className="text-xs">
-                {m}
+              <SelectItem key={`${m.model}-${m.keyName}`} value={m.model} className="text-xs">
+                {m.model} <span className="text-muted-foreground">[{m.keyName}]</span>
               </SelectItem>
             ))}
           </SelectContent>

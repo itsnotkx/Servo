@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Plus, Save } from 'lucide-react'
 import ClassifierNode from './nodes/classifier-node'
 import TierNode from './nodes/tier-node'
-import type { TierNodeData, Category } from './nodes/tier-node'
+import type { TierNodeData, Category, ModelOption } from './nodes/tier-node'
 
 interface RoutingConfig {
   default_category_id: string
@@ -33,7 +33,7 @@ const NODE_TYPES: NodeTypes = {
 
 function buildNodes(
   config: RoutingConfig,
-  availableModels: string[],
+  availableModels: ModelOption[],
   handlers: Pick<TierNodeData, 'onUpdate' | 'onSetDefault' | 'onDelete'>,
   existingPositions: Map<string, { x: number; y: number }>
 ): Node[] {
@@ -70,14 +70,14 @@ function buildEdges(categories: Category[]): Edge[] {
     source: 'classifier',
     target: cat.id,
     animated: true,
-    style: { stroke: 'hsl(var(--accent))' },
-    markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--accent))' },
+    style: { stroke: 'var(--accent)', strokeWidth: 2 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--accent)', width: 16, height: 16 },
   }))
 }
 
 export default function RoutingPage() {
   const [config, setConfig] = useState<RoutingConfig | null>(null)
-  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([])
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [saving, setSaving] = useState(false)
@@ -115,13 +115,9 @@ export default function RoutingPage() {
     ])
       .then(([routingConfig, keys]) => {
         setConfig(routingConfig as RoutingConfig)
-        const models = [
-          ...new Set(
-            (keys as { model: string; status: string }[])
-              .filter((k) => k.status === 'active')
-              .map((k) => k.model)
-          ),
-        ]
+        const models = (keys as { model: string; name: string; status: string }[])
+          .filter((k) => k.status === 'active')
+          .map((k): ModelOption => ({ model: k.model, keyName: k.name }))
         setAvailableModels(models)
       })
       .catch(() => setLoadError(true))
