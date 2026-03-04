@@ -6,6 +6,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MarkerType,
   useNodesState,
   useEdgesState,
   type Node,
@@ -70,6 +71,7 @@ function buildEdges(categories: Category[]): Edge[] {
     target: cat.id,
     animated: true,
     style: { stroke: 'hsl(var(--accent))' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--accent))' },
   }))
 }
 
