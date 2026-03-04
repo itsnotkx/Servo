@@ -32,138 +32,149 @@ import {
 interface ApiKey {
   id: string
   name: string
-  key: string
-  maskedKey: string
+  key_prefix: string
+  key_suffix: string
   model: string
   tags: string[]
   cost: number
   requests: number
-  createdAt: string
-  lastUsed: string
+  created_at: string
+  last_used: string | null
   status: 'active' | 'inactive'
 }
 
-const apiKeys: ApiKey[] = [
-  {
-    id: '1',
-    name: 'Production API Key',
-    key: 'sk_live_abc123def456',
-    maskedKey: 'sk_live_****6',
-    model: 'GPT-4',
-    tags: ['production', 'critical'],
-    cost: 1240,
-    requests: 2800,
-    createdAt: 'Dec 15, 2024',
-    lastUsed: '2 minutes ago',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Development API Key',
-    key: 'sk_test_xyz789uvw123',
-    maskedKey: 'sk_test_****3',
-    model: 'GPT-3.5',
-    tags: ['development'],
-    cost: 340,
-    requests: 1200,
-    createdAt: 'Jan 8, 2025',
-    lastUsed: '5 hours ago',
-    status: 'active',
-  },
-  {
-    id: '3',
-    name: 'Staging API Key',
-    key: 'sk_stage_qwe456rty789',
-    maskedKey: 'sk_stage_***9',
-    model: 'Claude',
-    tags: ['staging', 'testing'],
-    cost: 120,
-    requests: 600,
-    createdAt: 'Jan 10, 2025',
-    lastUsed: '1 day ago',
-    status: 'active',
-  },
-]
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatLastUsed(iso: string | null) {
+  if (!iso) return 'Never'
+  const diff = Date.now() - new Date(iso).getTime()
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`
+  return `${Math.floor(hours / 24)} day${Math.floor(hours / 24) !== 1 ? 's' : ''} ago`
+}
 
 export default function ApiKeysPage() {
-  const [keys, setKeys] = useState<ApiKey[]>(() => {
-    // Initialize from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('apiKeys')
-      if (saved) {
-        try {
-          return JSON.parse(saved)
-        } catch (e) {
-          console.error('Failed to parse saved keys:', e)
-        }
-      }
-    }
-    return apiKeys
-  })
-  const [open, setOpen] = useState(false)
+  const [keys, setKeys] = useState<ApiKey[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Create dialog state
+  const [createOpen, setCreateOpen] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyModel, setNewKeyModel] = useState('')
   const [newKeyTags, setNewKeyTags] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  // Save to localStorage whenever keys change
+  // One-time reveal dialog state
+  const [revealKey, setRevealKey] = useState<string | null>(null)
+  const [revealOpen, setRevealOpen] = useState(false)
+
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('apiKeys', JSON.stringify(keys))
-    }
-  }, [keys])
+    fetch('/api/keys')
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to load keys')
+        return r.json()
+      })
+      .then(setKeys)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
 
-  const handleCopy = (key: string) => {
-    navigator.clipboard.writeText(key)
-    // Could add toast notification here
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text)
   }
 
-  const handleRevoke = (id: string) => {
-    setKeys(keys.filter((k) => k.id !== id))
+  const handleRevoke = async (id: string) => {
+    const res = await fetch(`/api/keys/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setKeys((prev) => prev.filter((k) => k.id !== id))
+    }
   }
 
-  const handleAddKey = () => {
-    if (!newKeyName || !newKeyModel) {
-      return
-    }
+  const handleRotate = async (id: string) => {
+    const res = await fetch(`/api/keys/${id}/rotate`, { method: 'POST' })
+    if (!res.ok) return
+    const data = await res.json()
+    setKeys((prev) => prev.map((k) => (k.id === id ? { ...data } : k)))
+    setRevealKey(data.key)
+    setRevealOpen(true)
+  }
 
-    const generatedKey = `sk_${newKeyModel.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Math.random().toString(36).substring(2, 15)}`
-    const lastFour = generatedKey.slice(-4)
-    
+  const handleAddKey = async () => {
+    if (!newKeyName || !newKeyModel) return
+    setCreating(true)
+
     const tags = newKeyTags
       .split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
+      .map((t) => t.trim())
+      .filter(Boolean)
 
-    const newKey: ApiKey = {
-      id: crypto.randomUUID(),
-      name: newKeyName,
-      key: generatedKey,
-      maskedKey: `${generatedKey.split('_')[0]}_${generatedKey.split('_')[1]}_****${lastFour}`,
-      model: newKeyModel,
-      tags,
-      cost: 0,
-      requests: 0,
-      createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      lastUsed: 'Never',
-      status: 'active',
-    }
+    const res = await fetch('/api/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newKeyName, model: newKeyModel, tags }),
+    })
 
-    setKeys([...keys, newKey])
-    setOpen(false)
+    setCreating(false)
+
+    if (!res.ok) return
+
+    const data = await res.json()
+    const { key, ...keyWithoutSecret } = data
+    setKeys((prev) => [keyWithoutSecret, ...prev])
+    setCreateOpen(false)
     setNewKeyName('')
     setNewKeyModel('')
     setNewKeyTags('')
+    setRevealKey(key)
+    setRevealOpen(true)
   }
 
   return (
     <div className="p-8">
+      {/* One-time key reveal dialog */}
+      <Dialog open={revealOpen} onOpenChange={setRevealOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save your API key</DialogTitle>
+            <DialogDescription>
+              This is the only time your full API key will be shown. Copy it now and store it
+              somewhere safe.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 p-3 bg-secondary rounded-md">
+            <code className="text-xs text-accent flex-1 break-all">{revealKey}</code>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => revealKey && handleCopy(revealKey)}
+            >
+              <Copy className="w-4 h-4" />
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setRevealOpen(false)}>I&apos;ve saved it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="mb-8 flex justify-between items-start">
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">API Keys</h2>
-          <p className="text-muted-foreground">Manage and monitor your API keys with tagging and cost tracking</p>
+          <p className="text-muted-foreground">
+            Manage and monitor your API keys with tagging and cost tracking
+          </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2 bg-primary hover:bg-primary text-primary-foreground">
               <Plus className="w-4 h-4" />
@@ -217,10 +228,12 @@ export default function ApiKeysPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleAddKey}>Create Key</Button>
+              <Button onClick={handleAddKey} disabled={creating}>
+                {creating ? 'Creating...' : 'Create Key'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -234,99 +247,135 @@ export default function ApiKeysPage() {
         </Card>
         <Card className="bg-card border-border p-4">
           <p className="text-muted-foreground text-sm mb-1">Total Requests</p>
-          <p className="text-2xl font-bold text-foreground">{keys.reduce((sum, k) => sum + k.requests, 0).toLocaleString()}</p>
+          <p className="text-2xl font-bold text-foreground">
+            {keys.reduce((sum, k) => sum + k.requests, 0).toLocaleString()}
+          </p>
         </Card>
         <Card className="bg-card border-border p-4">
           <p className="text-muted-foreground text-sm mb-1">Total Cost</p>
-          <p className="text-2xl font-bold text-foreground">${keys.reduce((sum, k) => sum + k.cost, 0).toLocaleString()}</p>
+          <p className="text-2xl font-bold text-foreground">
+            ${keys.reduce((sum, k) => sum + k.cost, 0).toLocaleString()}
+          </p>
         </Card>
       </div>
 
       {/* Keys Table */}
       <Card className="bg-card border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary bg-opacity-50">
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key Name</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key ID</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Model</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tags</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Requests</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cost</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Last Used</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {keys.map((key) => (
-                <tr key={key.id} className="border-b border-border hover:bg-secondary hover:bg-opacity-30 transition">
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-medium text-foreground">{key.name}</p>
-                      <p className="text-xs text-muted-foreground">Created {key.createdAt}</p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs bg-secondary bg-opacity-50 px-2 py-1 rounded text-accent">{key.maskedKey}</code>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCopy(key.key)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-block bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs font-medium">
-                      {key.model}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-1 flex-wrap">
-                      {key.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-block bg-purple-500/20 text-purple-400 px-2 py-1 rounded text-xs font-medium"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-foreground">{key.requests.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-foreground">${key.cost.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-muted-foreground text-xs">{key.lastUsed}</td>
-                  <td className="px-6 py-4 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-card border-border">
-                        <DropdownMenuItem className="text-foreground cursor-pointer hover:bg-secondary">
-                          <RotateCw className="w-4 h-4 mr-2" />
-                          Rotate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive cursor-pointer hover:bg-secondary"
-                          onClick={() => handleRevoke(key.id)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Revoke
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
+        {loading ? (
+          <div className="p-8 text-center text-muted-foreground">Loading...</div>
+        ) : error ? (
+          <div className="p-8 text-center text-destructive">{error}</div>
+        ) : keys.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            No API keys yet. Create one to get started.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary bg-opacity-50">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Key Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Key ID
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Model
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Tags
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Requests
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Cost
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Last Used
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {keys.map((key) => (
+                  <tr
+                    key={key.id}
+                    className="border-b border-border hover:bg-secondary hover:bg-opacity-30 transition"
+                  >
+                    <td className="px-6 py-4">
+                      <div>
+                        <p className="font-medium text-foreground">{key.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Created {formatDate(key.created_at)}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <code className="text-xs bg-secondary bg-opacity-50 px-2 py-1 rounded text-accent">
+                        {key.key_prefix}****{key.key_suffix}
+                      </code>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-block bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs font-medium">
+                        {key.model}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-1 flex-wrap">
+                        {key.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-block bg-purple-500/20 text-purple-400 px-2 py-1 rounded text-xs font-medium"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-foreground">{key.requests.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-foreground">${key.cost.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-muted-foreground text-xs">
+                      {formatLastUsed(key.last_used)}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-card border-border">
+                          <DropdownMenuItem
+                            className="text-foreground cursor-pointer hover:bg-secondary"
+                            onClick={() => handleRotate(key.id)}
+                          >
+                            <RotateCw className="w-4 h-4 mr-2" />
+                            Rotate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive cursor-pointer hover:bg-secondary"
+                            onClick={() => handleRevoke(key.id)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Revoke
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )
