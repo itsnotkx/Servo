@@ -86,6 +86,7 @@ export default function RoutingPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
   // Stable handlers — use functional setConfig so they never go stale
   const handleUpdate = useCallback((id: string, field: string, value: string) => {
@@ -114,17 +115,19 @@ export default function RoutingPage() {
     Promise.all([
       fetch('/api/routing').then((r) => r.json()),
       fetch('/api/keys').then((r) => r.json()),
-    ]).then(([routingConfig, keys]) => {
-      setConfig(routingConfig as RoutingConfig)
-      const models = [
-        ...new Set(
-          (keys as { model: string; status: string }[])
-            .filter((k) => k.status === 'active')
-            .map((k) => k.model)
-        ),
-      ]
-      setAvailableModels(models)
-    })
+    ])
+      .then(([routingConfig, keys]) => {
+        setConfig(routingConfig as RoutingConfig)
+        const models = [
+          ...new Set(
+            (keys as { model: string; status: string }[])
+              .filter((k) => k.status === 'active')
+              .map((k) => k.model)
+          ),
+        ]
+        setAvailableModels(models)
+      })
+      .catch(() => setLoadError(true))
   }, [])
 
   // Rebuild ReactFlow nodes/edges whenever config or models change
@@ -140,7 +143,7 @@ export default function RoutingPage() {
     setEdges(buildEdges(config.categories))
   }, [config, availableModels, setNodes, setEdges, handleUpdate, handleSetDefault, handleDelete])
 
-  const handleAddTier = () => {
+  const handleAddTier = useCallback(() => {
     const id = `tier-${Date.now()}`
     setConfig((prev) => {
       if (!prev) return prev
@@ -149,9 +152,9 @@ export default function RoutingPage() {
         categories: [...prev.categories, { id, name: 'New Tier', description: '', model: '' }],
       }
     })
-  }
+  }, [])
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!config) return
     setSaving(true)
     setSaveError(null)
@@ -167,6 +170,14 @@ export default function RoutingPage() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     }
+  }, [config])
+
+  if (loadError) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-destructive">
+        Failed to load routing config. Please refresh the page.
+      </div>
+    )
   }
 
   if (!config) {
