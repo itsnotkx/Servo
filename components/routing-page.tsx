@@ -55,7 +55,6 @@ function buildNodes(
       availableModels,
       ...handlers,
     } satisfies TierNodeData,
-    draggable: false,
   }))
 
   return [classifierNode, ...tierNodes]

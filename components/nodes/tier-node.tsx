@@ -64,7 +64,7 @@ export default function TierNode({ data }: { data: TierNodeData }) {
       <textarea
         value={data.description}
         onChange={(e) => data.onUpdate(data.id, 'description', e.target.value)}
-        className="w-full text-xs text-muted-foreground bg-secondary/30 border border-border rounded p-2 resize-none mb-3 focus:outline-none focus:ring-1 focus:ring-accent"
+        className="nowheel nodrag w-full text-xs text-muted-foreground bg-secondary/30 border border-border rounded p-2 resize-none mb-3 focus:outline-none focus:ring-1 focus:ring-accent"
         rows={4}
         placeholder="Describe when the classifier should route to this tier..."
       />

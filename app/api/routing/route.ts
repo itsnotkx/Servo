@@ -10,20 +10,8 @@ import { supabase } from '@/lib/supabase'
 const DEFAULT_CONFIG = {
   default_category_id: 'simple',
   categories: [
-    {
-      id: 'simple',
-      name: 'Simple',
-      description:
-        'Use for direct, bounded tasks: factual Q&A, concise explanations, and routine coding work (e.g. implementing a single function, small bug fixes). Prefer this category whenever the request can be fully handled without deep multi-step analysis.',
-      model: '',
-    },
-    {
-      id: 'complex',
-      name: 'Complex',
-      description:
-        'Use only when the task genuinely requires deeper reasoning: broad system design, non-trivial architecture or migration plans, advanced debugging across multiple interacting components, or nuanced tradeoff analysis. Do not use for routine single-file or single-function tasks.',
-      model: '',
-    },
+    { id: 'simple', name: 'Simple', description: '', model: '' },
+    { id: 'complex', name: 'Complex', description: '', model: '' },
   ],
 }
 
