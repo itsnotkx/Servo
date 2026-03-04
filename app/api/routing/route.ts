@@ -26,11 +26,16 @@ export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('routing_configs')
     .select('config')
     .eq('user_id', userId)
     .single()
+
+  // PGRST116 = no rows found (expected for new users)
+  if (error && error.code !== 'PGRST116') {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 
   return NextResponse.json(data?.config ?? DEFAULT_CONFIG)
 }
@@ -49,6 +54,18 @@ export async function PUT(request: Request) {
   const config = body as { default_category_id?: unknown; categories?: unknown }
   if (typeof config.default_category_id !== 'string' || !Array.isArray(config.categories)) {
     return NextResponse.json({ error: 'Invalid config structure' }, { status: 400 })
+  }
+
+  const categories = config.categories as unknown[]
+  const validCategories = categories.every(
+    (c) =>
+      c !== null &&
+      typeof c === 'object' &&
+      typeof (c as Record<string, unknown>).id === 'string' &&
+      typeof (c as Record<string, unknown>).name === 'string'
+  )
+  if (!validCategories) {
+    return NextResponse.json({ error: 'Each category must have id and name' }, { status: 400 })
   }
 
   const { error } = await supabase
