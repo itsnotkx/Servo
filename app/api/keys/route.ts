@@ -1,0 +1,61 @@
+import { auth } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
+import crypto from 'crypto'
+
+export async function GET() {
+  const { userId } = await auth()
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data, error } = await supabase
+    .from('api_keys')
+    .select('id, name, key_prefix, key_suffix, model, tags, requests, cost, status, created_at, last_used')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json(data)
+}
+
+export async function POST(request: Request) {
+  const { userId } = await auth()
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json()
+  const { name, model, tags } = body
+
+  if (!name || !model) {
+    return NextResponse.json({ error: 'name and model are required' }, { status: 400 })
+  }
+
+  const raw = crypto.randomBytes(16).toString('hex') // 128-bit entropy
+  const key = `sk_live_${raw}`
+
+  const { data, error } = await supabase
+    .from('api_keys')
+    .insert({
+      user_id: userId,
+      name,
+      key,
+      key_prefix: 'sk_live_',
+      key_suffix: raw.slice(-4),
+      model,
+      tags: Array.isArray(tags) ? tags : [],
+    })
+    .select('id, name, key_prefix, key_suffix, model, tags, requests, cost, status, created_at, last_used')
+    .single()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Full key returned once only — never returned again after this
+  return NextResponse.json({ ...data, key }, { status: 201 })
+}
