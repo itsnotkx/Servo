@@ -89,22 +89,30 @@ export default function ApiKeysPage() {
   }, [])
 
   const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text)
+    navigator.clipboard.writeText(text).catch(() => {
+      // clipboard access denied or non-HTTPS — silently ignore
+    })
   }
 
   const handleRevoke = async (id: string) => {
     const res = await fetch(`/api/keys/${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      setKeys((prev) => prev.filter((k) => k.id !== id))
+    if (!res.ok) {
+      setError('Failed to revoke key')
+      return
     }
+    setKeys((prev) => prev.filter((k) => k.id !== id))
   }
 
   const handleRotate = async (id: string) => {
     const res = await fetch(`/api/keys/${id}/rotate`, { method: 'POST' })
-    if (!res.ok) return
+    if (!res.ok) {
+      setError('Failed to rotate key')
+      return
+    }
     const data = await res.json()
-    setKeys((prev) => prev.map((k) => (k.id === id ? { ...data } : k)))
-    setRevealKey(data.key)
+    const { key: rotatedKey, ...keyWithoutSecret } = data
+    setKeys((prev) => prev.map((k) => (k.id === id ? keyWithoutSecret : k)))
+    setRevealKey(rotatedKey)
     setRevealOpen(true)
   }
 
@@ -243,7 +251,7 @@ export default function ApiKeysPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card className="bg-card border-border p-4">
           <p className="text-muted-foreground text-sm mb-1">Active Keys</p>
-          <p className="text-2xl font-bold text-foreground">{keys.length}</p>
+          <p className="text-2xl font-bold text-foreground">{keys.filter(k => k.status === 'active').length}</p>
         </Card>
         <Card className="bg-card border-border p-4">
           <p className="text-muted-foreground text-sm mb-1">Total Requests</p>
