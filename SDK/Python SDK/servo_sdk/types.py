@@ -191,3 +191,43 @@ class CategoriesResponse:
             "categories": [c.to_dict() for c in self.categories],
         }
 
+
+@dataclass(frozen=True)
+class RoutingConfig:
+    default_category_id: str
+    categories: list[ClassificationCategory]
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "RoutingConfig":
+        categories_raw = _require(d, "categories")
+        return RoutingConfig(
+            default_category_id=str(_require(d, "default_category_id")),
+            categories=[ClassificationCategory.from_dict(c) for c in categories_raw],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "default_category_id": self.default_category_id,
+            "categories": [c.to_dict() for c in self.categories],
+        }
+
+
+@dataclass
+class CachedConfig:
+    key_id: str
+    user_id: str
+    model: str
+    tags: list[str]
+    tiers: dict[str, str]
+    routing_config: RoutingConfig | None = None
+
+    @staticmethod
+    def from_validate_response(d: dict[str, Any]) -> "CachedConfig":
+        return CachedConfig(
+            key_id=str(_require(d, "key_id")),
+            user_id=str(_require(d, "user_id")),
+            model=str(_require(d, "model")),
+            tags=list(d.get("tags") or []),
+            tiers={str(k): str(v) for k, v in (_require(d, "tiers")).items()},
+        )
+

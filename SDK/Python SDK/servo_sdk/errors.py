@@ -22,3 +22,8 @@ class ServoAPIError(ServoSDKError):
 class ServoConnectionError(ServoSDKError):
     cause: Exception | None = None
 
+
+@dataclass(frozen=True)
+class ServoAuthenticationError(ServoSDKError):
+    status_code: int = 401
+
