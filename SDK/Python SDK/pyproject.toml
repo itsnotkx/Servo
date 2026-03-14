@@ -11,6 +11,9 @@ requires-python = ">=3.10"
 license = { text = "UNLICENSED" }
 authors = [{ name = "Servo SDK Contributors" }]
 dependencies = [
+    "langchain-openai>=0.1.0",
+    "langchain-core>=0.1.0",
+    "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]

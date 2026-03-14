@@ -4,9 +4,12 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
 from ._http import HTTPClient
 from .context import Conversation
-from .errors import ServoAPIError, ServoAuthenticationError
+from .errors import ServoAPIError, ServoAuthenticationError, ServoDecompositionError
 from .types import (
     CachedConfig,
     ClassificationResult,
@@ -15,9 +18,18 @@ from .types import (
     RoutingConfig,
     TiersResponse,
     CategoriesResponse,
+    Subtask,
+    DecompositionResult,
 )
 
 _SERVO_ENDPOINT = "https://servo.example.com"  # TODO: set to real prod URL
+_CLASSIFIER_DEFAULT = "http://localhost:8080"
+
+_DECOMPOSE_SYSTEM_PROMPT = (
+    "You are a task decomposition assistant. "
+    "Given a user prompt, break it into atomic, non-overlapping subtasks. "
+    "Use 'dependsOn' to express task dependencies by referencing other subtask IDs."
+)
 
 
 @dataclass
@@ -32,6 +44,7 @@ class Servo:
 
     api_key: str
     timeout_s: float = 30.0
+    classifier_url: str | None = None
 
     def __post_init__(self) -> None:
         endpoint = os.environ.get("SERVO_ENDPOINT", _SERVO_ENDPOINT)
@@ -40,6 +53,10 @@ class Servo:
             api_key=self.api_key,
             timeout_s=self.timeout_s,
         )
+        if self.classifier_url is None:
+            self._classifier_url: str = os.environ.get("CLASSIFIER_ENDPOINT", _CLASSIFIER_DEFAULT)
+        else:
+            self._classifier_url = self.classifier_url
         self._cached_config: CachedConfig | None = None
         self._default_conversation: Conversation | None = None
         self._validate_and_cache()
@@ -171,3 +188,37 @@ class Servo:
             },
         )
         return ProcessingResult.from_dict(data)
+
+    def decompose(self, prompt: str) -> DecompositionResult:
+        """
+        Decompose a prompt into atomic subtasks using the local classifier model.
+
+        Uses LangChain's with_structured_output() for schema-constrained JSON generation,
+        analogous to outlines grammar-based constrained decoding.
+
+        Raises ServoDecompositionError if the model returns output that does not conform
+        to the DecompositionResult schema.
+        Raises ServoConnectionError if the local model is unreachable.
+        """
+        llm = ChatOpenAI(
+            model="local",
+            base_url=self._classifier_url.rstrip("/") + "/v1",
+            api_key="not-needed",
+            temperature=0,
+            timeout=self.timeout_s,
+        )
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", _DECOMPOSE_SYSTEM_PROMPT),
+            ("human", "{input}"),
+        ])
+        chain = prompt_template | llm.with_structured_output(
+            DecompositionResult,
+            method="json_schema",
+        )
+        try:
+            return chain.invoke({"input": prompt})
+        except Exception as e:
+            raise ServoDecompositionError(
+                message=f"Decomposition failed: {e}",
+                raw_content=str(e),
+            ) from e

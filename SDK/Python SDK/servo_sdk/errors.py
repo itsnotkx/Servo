@@ -27,3 +27,8 @@ class ServoConnectionError(ServoSDKError):
 class ServoAuthenticationError(ServoSDKError):
     status_code: int = 401
 
+
+@dataclass(frozen=True)
+class ServoDecompositionError(ServoSDKError):
+    raw_content: str | None = None
+

@@ -1,5 +1,5 @@
 from .client import Servo
-from .errors import ServoAuthenticationError
+from .errors import ServoAuthenticationError, ServoDecompositionError
 from .types import (
     CachedConfig,
     ClassificationResult,
@@ -10,11 +10,14 @@ from .types import (
     RoutingConfig,
     TiersResponse,
     RouteResponse,
+    Subtask,
+    DecompositionResult,
 )
 
 __all__ = [
     "Servo",
     "ServoAuthenticationError",
+    "ServoDecompositionError",
     "CachedConfig",
     "ClassificationResult",
     "ClassificationCategory",
@@ -24,6 +27,8 @@ __all__ = [
     "RoutingConfig",
     "TiersResponse",
     "RouteResponse",
+    "Subtask",
+    "DecompositionResult",
 ]
 
 __version__ = "0.1.0"

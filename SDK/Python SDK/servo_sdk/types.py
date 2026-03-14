@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from pydantic import BaseModel, Field
+
 
 def _require(d: dict[str, Any], key: str) -> Any:
     if key not in d:
@@ -210,6 +212,24 @@ class RoutingConfig:
             "default_category_id": self.default_category_id,
             "categories": [c.to_dict() for c in self.categories],
         }
+
+
+class Subtask(BaseModel):
+    """Individual subtask in decomposition."""
+    id: str = Field(description="Unique identifier for the subtask")
+    text: str = Field(description="The subtask description")
+    depends_on: list[str] = Field(
+        default_factory=list,
+        alias="dependsOn",
+        description="IDs of subtasks this depends on",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class DecompositionResult(BaseModel):
+    """Complete decomposition of a user prompt into subtasks."""
+    subtasks: list[Subtask] = Field(description="List of decomposed subtasks")
 
 
 @dataclass
