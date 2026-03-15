@@ -195,16 +195,36 @@ class CategoriesResponse:
 
 
 @dataclass(frozen=True)
+class RoutingCategory:
+    id: str
+    name: str
+    description: str
+    model: str
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "RoutingCategory":
+        return RoutingCategory(
+            id=str(_require(d, "id")),
+            name=str(_require(d, "name")),
+            description=str(d.get("description", "")),
+            model=str(d.get("model", "")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "name": self.name, "description": self.description, "model": self.model}
+
+
+@dataclass(frozen=True)
 class RoutingConfig:
     default_category_id: str
-    categories: list[ClassificationCategory]
+    categories: list[RoutingCategory]
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "RoutingConfig":
         categories_raw = _require(d, "categories")
         return RoutingConfig(
             default_category_id=str(_require(d, "default_category_id")),
-            categories=[ClassificationCategory.from_dict(c) for c in categories_raw],
+            categories=[RoutingCategory.from_dict(c) for c in categories_raw],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -230,6 +250,26 @@ class Subtask(BaseModel):
 class DecompositionResult(BaseModel):
     """Complete decomposition of a user prompt into subtasks."""
     subtasks: list[Subtask] = Field(description="List of decomposed subtasks")
+
+
+class ClassifiedSubtask(BaseModel):
+    """Subtask annotated with a complexity classification."""
+    id: str = Field(description="Unique identifier for the subtask")
+    text: str = Field(description="The subtask description")
+    depends_on: list[str] = Field(
+        default_factory=list,
+        alias="dependsOn",
+        description="IDs of subtasks this depends on",
+    )
+    complexity_id: str = Field(description="Category ID from routing config")
+    complexity_reasoning: str = Field(description="Brief reasoning for the classification")
+
+    model_config = {"populate_by_name": True}
+
+
+class ClassifiedDecompositionResult(BaseModel):
+    """Decomposition result with each subtask classified by complexity."""
+    subtasks: list[ClassifiedSubtask] = Field(description="Classified subtasks")
 
 
 @dataclass

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda
 
 from ._http import HTTPClient
 from .context import Conversation
@@ -13,8 +15,11 @@ from .errors import ServoAPIError, ServoAuthenticationError, ServoDecompositionE
 from .types import (
     CachedConfig,
     ClassificationResult,
+    ClassifiedDecompositionResult,
+    ClassifiedSubtask,
     ProcessingResult,
     RouteResponse,
+    RoutingCategory,
     RoutingConfig,
     TiersResponse,
     CategoriesResponse,
@@ -28,7 +33,15 @@ _CLASSIFIER_DEFAULT = "http://localhost:8080"
 _DECOMPOSE_SYSTEM_PROMPT = (
     "You are a task decomposition assistant. "
     "Given a user prompt, break it into atomic, non-overlapping subtasks. "
+    "Simple prompts need only one subtask; complex prompts may need up to five. "
     "Use 'dependsOn' to express task dependencies by referencing other subtask IDs."
+)
+
+_CLASSIFY_SYSTEM_PROMPT_TEMPLATE = (
+    "You are a task complexity classifier. "
+    "Given a list of subtasks, assign each one the most appropriate complexity category.\n\n"
+    "Available categories:\n{categories}\n\n"
+    "For each subtask, choose the category whose description best matches the subtask's difficulty."
 )
 
 
@@ -220,5 +233,70 @@ class Servo:
         except Exception as e:
             raise ServoDecompositionError(
                 message=f"Decomposition failed: {e}",
+                raw_content=str(e),
+            ) from e
+
+    def decompose_and_classify(self, prompt: str) -> ClassifiedDecompositionResult:
+        """
+        Decompose a prompt into subtasks and classify each by complexity in one
+        continuous LCEL pipeline.
+
+        The chain runs two sequential LLM calls through the local classifier:
+          1. Decompose the prompt → DecompositionResult
+          2. Classify every subtask → ClassifiedDecompositionResult
+
+        Each subtask in the result gains `complexity_id` (a routing config category ID)
+        and `complexity_reasoning` (a one-sentence justification).
+
+        Raises ServoDecompositionError if the routing config is unavailable or if
+        either LLM call fails.
+        """
+        if self._cached_config is None or self._cached_config.routing_config is None:
+            raise ServoDecompositionError(
+                message="Routing config not available for classification",
+                raw_content="",
+            )
+
+        categories_str = "\n".join(
+            f"- {c.id}: {c.name} — {c.description}"
+            for c in self._cached_config.routing_config.categories
+        )
+
+        llm = ChatOpenAI(
+            model="local",
+            base_url=self._classifier_url.rstrip("/") + "/v1",
+            api_key="not-needed",
+            temperature=0,
+            timeout=self.timeout_s,
+        )
+        decompose_prompt = ChatPromptTemplate.from_messages([
+            ("system", _DECOMPOSE_SYSTEM_PROMPT),
+            ("human", "{input}"),
+        ])
+        classify_prompt = ChatPromptTemplate.from_messages([
+            ("system", _CLASSIFY_SYSTEM_PROMPT_TEMPLATE.format(categories=categories_str)),
+            ("human", "{input}"),
+        ])
+
+        def _to_classify_input(decomp: DecompositionResult) -> dict:
+            return {
+                "input": json.dumps(
+                    {"subtasks": [s.model_dump(by_alias=True) for s in decomp.subtasks]}
+                )
+            }
+
+        chain = (
+            decompose_prompt
+            | llm.with_structured_output(DecompositionResult, method="json_schema")
+            | RunnableLambda(_to_classify_input)
+            | classify_prompt
+            | llm.with_structured_output(ClassifiedDecompositionResult, method="json_schema")
+        )
+
+        try:
+            return chain.invoke({"input": prompt})
+        except Exception as e:
+            raise ServoDecompositionError(
+                message=f"Decompose-and-classify failed: {e}",
                 raw_content=str(e),
             ) from e
