@@ -5,18 +5,22 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+import chromadb
+from chromadb.utils.embedding_functions import FastEmbedEmbeddingFunction
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
 from ._http import HTTPClient
 from .context import Conversation
-from .errors import ServoAPIError, ServoAuthenticationError, ServoDecompositionError
+from .errors import ServoAPIError, ServoAuthenticationError, ServoDecompositionError, ServoEmbeddingError
 from .types import (
     CachedConfig,
     ClassificationResult,
     ClassifiedDecompositionResult,
     ClassifiedSubtask,
+    ContextualizedDecompositionResult,
+    ContextualizedSubtask,
     ProcessingResult,
     RouteResponse,
     RoutingCategory,
@@ -26,6 +30,57 @@ from .types import (
     Subtask,
     DecompositionResult,
 )
+
+class ContextDB:
+    """
+    Ephemeral per-prompt ChromaDB vector store.
+    Created fresh for each decompose_classify_and_embed() call.
+
+    Lifecycle:
+      Stage 4: subtask texts are embedded and stored by ID.
+      Stage 5: model responses overwrite entries via add();
+               subtasks retrieve their dependency responses via get_context_for().
+    """
+
+    def __init__(self, embedding_fn: FastEmbedEmbeddingFunction) -> None:
+        self._client = chromadb.EphemeralClient()
+        self._collection = self._client.create_collection(
+            name="subtasks",
+            embedding_function=embedding_fn,
+        )
+
+    def add(self, subtask_id: str, content: str) -> None:
+        """Embed and store (or overwrite) content for a given subtask ID."""
+        existing = self._collection.get(ids=[subtask_id])
+        if existing["ids"]:
+            self._collection.update(ids=[subtask_id], documents=[content])
+        else:
+            self._collection.add(ids=[subtask_id], documents=[content])
+
+    def get_by_id(self, subtask_id: str) -> str | None:
+        """Exact ID lookup — used for dependency resolution."""
+        result = self._collection.get(ids=[subtask_id])
+        docs = result.get("documents") or []
+        return docs[0] if docs else None
+
+    def get_context_for(self, depends_on: list[str]) -> list[str]:
+        """Return stored content for each dependency ID that exists in the DB."""
+        if not depends_on:
+            return []
+        result = self._collection.get(ids=depends_on)
+        return result.get("documents") or []
+
+    def search(self, query: str, k: int = 3) -> list[str]:
+        """Semantic similarity search by text query. Used by Stage 5+ for fuzzy retrieval."""
+        count = self._collection.count()
+        if count == 0:
+            return []
+        results = self._collection.query(
+            query_texts=[query],
+            n_results=min(k, count),
+        )
+        return (results.get("documents") or [[]])[0]
+
 
 _SERVO_ENDPOINT = "https://servo.example.com"  # TODO: set to real prod URL
 _CLASSIFIER_DEFAULT = "http://localhost:8080"
@@ -72,6 +127,7 @@ class Servo:
             self._classifier_url = self.classifier_url
         self._cached_config: CachedConfig | None = None
         self._default_conversation: Conversation | None = None
+        self._embedding_fn_cache: FastEmbedEmbeddingFunction | None = None
         self._validate_and_cache()
 
     # ------------------------------------------------------------------
@@ -105,6 +161,15 @@ class Servo:
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
+
+    @property
+    def _embedding_fn(self) -> FastEmbedEmbeddingFunction:
+        """Lazy-init and cache the fastembed embedding function for the client's lifetime."""
+        if self._embedding_fn_cache is None:
+            self._embedding_fn_cache = FastEmbedEmbeddingFunction(
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
+        return self._embedding_fn_cache
 
     @property
     def config(self) -> CachedConfig | None:
@@ -300,3 +365,44 @@ class Servo:
                 message=f"Decompose-and-classify failed: {e}",
                 raw_content=str(e),
             ) from e
+
+    def embed_and_contextualize(
+        self,
+        classified: ClassifiedDecompositionResult,
+    ) -> tuple[ContextualizedDecompositionResult, ContextDB]:
+        """
+        Step 3 in the pipeline: embed all subtask texts into an ephemeral ChromaDB ContextDB.
+
+        Returns:
+            - ContextualizedDecompositionResult: subtasks with empty context lists
+              (to be filled by Stage 5 as model responses arrive)
+            - ContextDB: live vector store to pass into the Stage 5 routing loop
+        """
+        try:
+            db = ContextDB(self._embedding_fn)
+
+            for subtask in classified.subtasks:
+                db.add(subtask.id, subtask.text)
+
+            contextualized_subtasks = [
+                ContextualizedSubtask(**subtask.model_dump(), context=[])
+                for subtask in classified.subtasks
+            ]
+
+            return ContextualizedDecompositionResult(subtasks=contextualized_subtasks), db
+
+        except Exception as exc:
+            raise ServoEmbeddingError(str(exc), cause=exc) from exc
+
+    def decompose_classify_and_embed(
+        self,
+        prompt: str,
+        *,
+        timeout_s: float = 60.0,
+    ) -> tuple[ContextualizedDecompositionResult, ContextDB]:
+        """
+        Full pipeline: decompose → classify → embed.
+        Returns contextualized subtasks (empty context) + live ContextDB for Stage 5.
+        """
+        classified = self.decompose_and_classify(prompt)
+        return self.embed_and_contextualize(classified)

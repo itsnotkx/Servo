@@ -32,3 +32,10 @@ class ServoAuthenticationError(ServoSDKError):
 class ServoDecompositionError(ServoSDKError):
     raw_content: str | None = None
 
+
+class ServoEmbeddingError(ServoSDKError):
+    """Raised when subtask embedding or ContextDB operations fail."""
+    def __init__(self, message: str, cause: Exception | None = None):
+        super().__init__(f"Embedding error: {message}")
+        self.__cause__ = cause
+

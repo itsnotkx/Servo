@@ -1,11 +1,13 @@
-from .client import Servo
-from .errors import ServoAuthenticationError, ServoDecompositionError
+from .client import ContextDB, Servo
+from .errors import ServoAuthenticationError, ServoDecompositionError, ServoEmbeddingError
 from .types import (
     CachedConfig,
     ClassificationResult,
     ClassificationCategory,
     ClassifiedSubtask,
     ClassifiedDecompositionResult,
+    ContextualizedSubtask,
+    ContextualizedDecompositionResult,
     CategoriesResponse,
     ChunkMetadata,
     ProcessingResult,
@@ -18,14 +20,18 @@ from .types import (
 )
 
 __all__ = [
+    "ContextDB",
     "Servo",
     "ServoAuthenticationError",
     "ServoDecompositionError",
+    "ServoEmbeddingError",
     "CachedConfig",
     "ClassificationResult",
     "ClassificationCategory",
     "ClassifiedSubtask",
     "ClassifiedDecompositionResult",
+    "ContextualizedSubtask",
+    "ContextualizedDecompositionResult",
     "CategoriesResponse",
     "ChunkMetadata",
     "ProcessingResult",

@@ -272,6 +272,16 @@ class ClassifiedDecompositionResult(BaseModel):
     subtasks: list[ClassifiedSubtask] = Field(description="Classified subtasks")
 
 
+class ContextualizedSubtask(ClassifiedSubtask):
+    """ClassifiedSubtask with a context list for dependency responses (populated by Stage 5)."""
+    context: list[str] = Field(default_factory=list)
+
+
+class ContextualizedDecompositionResult(BaseModel):
+    """Decomposition result with contextualized subtasks."""
+    subtasks: list[ContextualizedSubtask]
+
+
 @dataclass
 class CachedConfig:
     key_id: str
