@@ -1,5 +1,5 @@
 from .client import ContextDB, Servo
-from .errors import ServoAuthenticationError, ServoDecompositionError, ServoEmbeddingError
+from .errors import ServoAuthenticationError, ServoDecompositionError, ServoEmbeddingError, ServoRoutingError
 from .types import (
     CachedConfig,
     ClassificationResult,
@@ -10,9 +10,11 @@ from .types import (
     ContextualizedDecompositionResult,
     CategoriesResponse,
     ChunkMetadata,
+    ExecutionResult,
     ProcessingResult,
     RoutingCategory,
     RoutingConfig,
+    SubtaskExecutionResult,
     TiersResponse,
     RouteResponse,
     Subtask,
@@ -25,6 +27,7 @@ __all__ = [
     "ServoAuthenticationError",
     "ServoDecompositionError",
     "ServoEmbeddingError",
+    "ServoRoutingError",
     "CachedConfig",
     "ClassificationResult",
     "ClassificationCategory",
@@ -34,9 +37,11 @@ __all__ = [
     "ContextualizedDecompositionResult",
     "CategoriesResponse",
     "ChunkMetadata",
+    "ExecutionResult",
     "ProcessingResult",
     "RoutingCategory",
     "RoutingConfig",
+    "SubtaskExecutionResult",
     "TiersResponse",
     "RouteResponse",
     "Subtask",

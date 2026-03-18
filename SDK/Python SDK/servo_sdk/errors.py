@@ -39,3 +39,11 @@ class ServoEmbeddingError(ServoSDKError):
         super().__init__(f"Embedding error: {message}")
         self.__cause__ = cause
 
+
+class ServoRoutingError(ServoSDKError):
+    """Raised when LLM routing or execution fails."""
+    def __init__(self, message: str, subtask_id: str | None = None, cause: Exception | None = None):
+        super().__init__(f"Routing error: {message}")
+        self.subtask_id = subtask_id
+        self.__cause__ = cause
+

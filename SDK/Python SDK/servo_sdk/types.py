@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -280,6 +280,40 @@ class ContextualizedSubtask(ClassifiedSubtask):
 class ContextualizedDecompositionResult(BaseModel):
     """Decomposition result with contextualized subtasks."""
     subtasks: list[ContextualizedSubtask]
+
+
+@dataclass
+class SubtaskExecutionResult:
+    subtask_id: str
+    subtask_text: str
+    complexity_id: str           # category ID used (may be default fallback)
+    model: str                   # RoutingCategory.model value actually used
+    response: str                # raw text response from the LLM
+    used_default_category: bool  # True if complexity_id had no matching category
+    depends_on: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ExecutionResult:
+    subtask_results: list[SubtaskExecutionResult]
+
+    @property
+    def final_response(self) -> str:
+        """Returns responses of terminal subtasks (those nothing else depends on).
+
+        Single subtask → return its response directly.
+        Multiple subtasks → identify terminal nodes (IDs not referenced in any depends_on),
+        join their responses with double newlines.
+        """
+        if not self.subtask_results:
+            return ""
+        if len(self.subtask_results) == 1:
+            return self.subtask_results[0].response
+        dependency_ids: set[str] = set()
+        for r in self.subtask_results:
+            dependency_ids.update(r.depends_on)
+        terminals = [r for r in self.subtask_results if r.subtask_id not in dependency_ids]
+        return "\n\n".join(t.response for t in terminals)
 
 
 @dataclass

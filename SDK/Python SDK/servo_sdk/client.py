@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import Any
 
 import chromadb
-from chromadb.utils.embedding_functions import FastEmbedEmbeddingFunction
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
 from ._http import HTTPClient
 from .context import Conversation
-from .errors import ServoAPIError, ServoAuthenticationError, ServoDecompositionError, ServoEmbeddingError
+from .errors import ServoAPIError, ServoAuthenticationError, ServoDecompositionError, ServoEmbeddingError, ServoRoutingError
 from .types import (
     CachedConfig,
     ClassificationResult,
@@ -21,10 +25,12 @@ from .types import (
     ClassifiedSubtask,
     ContextualizedDecompositionResult,
     ContextualizedSubtask,
+    ExecutionResult,
     ProcessingResult,
     RouteResponse,
     RoutingCategory,
     RoutingConfig,
+    SubtaskExecutionResult,
     TiersResponse,
     CategoriesResponse,
     Subtask,
@@ -42,10 +48,11 @@ class ContextDB:
                subtasks retrieve their dependency responses via get_context_for().
     """
 
-    def __init__(self, embedding_fn: FastEmbedEmbeddingFunction) -> None:
+    def __init__(self, embedding_fn: DefaultEmbeddingFunction) -> None:
         self._client = chromadb.EphemeralClient()
+        self._collection_name = f"subtasks_{uuid.uuid4().hex}"
         self._collection = self._client.create_collection(
-            name="subtasks",
+            name=self._collection_name,
             embedding_function=embedding_fn,
         )
 
@@ -69,6 +76,13 @@ class ContextDB:
             return []
         result = self._collection.get(ids=depends_on)
         return result.get("documents") or []
+
+    def close(self) -> None:
+        """Delete the in-memory collection to release resources immediately."""
+        try:
+            self._client.delete_collection(self._collection_name)
+        except Exception:
+            pass
 
     def search(self, query: str, k: int = 3) -> list[str]:
         """Semantic similarity search by text query. Used by Stage 5+ for fuzzy retrieval."""
@@ -113,6 +127,10 @@ class Servo:
     api_key: str
     timeout_s: float = 30.0
     classifier_url: str | None = None
+    provider_api_keys: dict[str, str] = field(default_factory=dict)
+    # e.g. {'google': 'AIza...', 'openai': 'sk-...', 'anthropic': 'sk-ant-...'}
+    custom_endpoints: dict[str, str] = field(default_factory=dict)
+    # keyed by category ID: {'local': 'http://localhost:11434/v1'}
 
     def __post_init__(self) -> None:
         endpoint = os.environ.get("SERVO_ENDPOINT", _SERVO_ENDPOINT)
@@ -127,7 +145,8 @@ class Servo:
             self._classifier_url = self.classifier_url
         self._cached_config: CachedConfig | None = None
         self._default_conversation: Conversation | None = None
-        self._embedding_fn_cache: FastEmbedEmbeddingFunction | None = None
+        self._embedding_fn_cache: DefaultEmbeddingFunction | None = None
+        self._db_lock: threading.Lock = threading.Lock()
         self._validate_and_cache()
 
     # ------------------------------------------------------------------
@@ -163,12 +182,10 @@ class Servo:
     # ------------------------------------------------------------------
 
     @property
-    def _embedding_fn(self) -> FastEmbedEmbeddingFunction:
+    def _embedding_fn(self) -> DefaultEmbeddingFunction:
         """Lazy-init and cache the fastembed embedding function for the client's lifetime."""
         if self._embedding_fn_cache is None:
-            self._embedding_fn_cache = FastEmbedEmbeddingFunction(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
-            )
+            self._embedding_fn_cache = DefaultEmbeddingFunction()
         return self._embedding_fn_cache
 
     @property
@@ -406,3 +423,228 @@ class Servo:
         """
         classified = self.decompose_and_classify(prompt)
         return self.embed_and_contextualize(classified)
+
+    # ------------------------------------------------------------------
+    # Stage 5: Route and Execute
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_provider(model: str) -> str:
+        """Infer the LLM provider from a model name string."""
+        m = model.lower()
+        if m.startswith(("gemini-", "gemma-")):
+            return "google"
+        if m.startswith("claude-"):
+            return "anthropic"
+        if m.startswith(("gpt-", "o1-", "o3-", "o4-")):
+            return "openai"
+        return "openai_compatible"
+
+    def _resolve_category(self, complexity_id: str) -> tuple[RoutingCategory, bool]:
+        """Return (category, used_default). Falls back to default_category_id if not found."""
+        if self._cached_config is None or self._cached_config.routing_config is None:
+            raise ServoDecompositionError(
+                message="Routing config not available",
+                raw_content="",
+            )
+        config = self._cached_config.routing_config
+        by_id = {c.id: c for c in config.categories}
+
+        if complexity_id in by_id:
+            return by_id[complexity_id], False
+
+        default_id = config.default_category_id
+        if default_id in by_id:
+            return by_id[default_id], True
+
+        raise ServoRoutingError(
+            message=f"Neither complexity_id '{complexity_id}' nor default_category_id '{default_id}' found in routing config"
+        )
+
+    def _build_llm(self, category: RoutingCategory):
+        """Lazily import and construct the correct LangChain chat model for a category."""
+        provider = self._detect_provider(category.model)
+
+        if provider == "google":
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI  # type: ignore
+            except ImportError as e:
+                raise ServoRoutingError(
+                    message="langchain-google-genai is not installed. Run: pip install servo-sdk[google]",
+                    cause=e,
+                ) from e
+            api_key = self.provider_api_keys.get("google") or os.environ.get("GOOGLE_AI_STUDIO_API_KEY")
+            if not api_key:
+                raise ServoRoutingError(
+                    message="No API key for Google. Set GOOGLE_AI_STUDIO_API_KEY or pass provider_api_keys={'google': '...'}"
+                )
+            return ChatGoogleGenerativeAI(model=category.model, google_api_key=api_key)
+
+        if provider == "anthropic":
+            try:
+                from langchain_anthropic import ChatAnthropic  # type: ignore
+            except ImportError as e:
+                raise ServoRoutingError(
+                    message="langchain-anthropic is not installed. Run: pip install servo-sdk[anthropic]",
+                    cause=e,
+                ) from e
+            api_key = self.provider_api_keys.get("anthropic") or os.environ.get("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise ServoRoutingError(
+                    message="No API key for Anthropic. Set ANTHROPIC_API_KEY or pass provider_api_keys={'anthropic': '...'}"
+                )
+            return ChatAnthropic(model=category.model, anthropic_api_key=api_key)
+
+        if provider == "openai":
+            api_key = self.provider_api_keys.get("openai") or os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                raise ServoRoutingError(
+                    message="No API key for OpenAI. Set OPENAI_API_KEY or pass provider_api_keys={'openai': '...'}"
+                )
+            return ChatOpenAI(model=category.model, api_key=api_key)
+
+        # openai_compatible — requires a custom endpoint configured per category ID
+        endpoint = self.custom_endpoints.get(category.id)
+        if not endpoint:
+            raise ServoRoutingError(
+                message=f"No custom endpoint configured for category '{category.id}'. "
+                        f"Pass custom_endpoints={{'{category.id}': 'http://...'}}",
+                subtask_id=None,
+            )
+        return ChatOpenAI(model=category.model, base_url=endpoint, api_key="not-needed")
+
+    @staticmethod
+    def _build_execution_messages(subtask_text: str, context: list[str]) -> list:
+        """Build LangChain messages for a subtask, injecting dependency outputs as context."""
+        if context:
+            context_blocks = "\n\n".join(
+                f"[Dependency {i + 1}]:\n{c}" for i, c in enumerate(context)
+            )
+            system_content = (
+                "You are a helpful assistant executing one step in a multi-step pipeline.\n"
+                "The following are outputs from upstream steps that your task depends on:\n\n"
+                f"{context_blocks}\n\n"
+                "Use this context to complete your assigned task."
+            )
+        else:
+            system_content = "You are a helpful assistant. Complete the following task."
+
+        return [SystemMessage(content=system_content), HumanMessage(content=subtask_text)]
+
+    def _execute_subtask(
+        self,
+        subtask: ContextualizedSubtask,
+        db: ContextDB,
+        lock: threading.Lock,
+    ) -> SubtaskExecutionResult:
+        """Execute a single subtask: resolve category, fetch context, call LLM, write result."""
+        category, used_default = self._resolve_category(subtask.complexity_id)
+        context = db.get_context_for(subtask.depends_on)
+        llm = self._build_llm(category)
+        messages = self._build_execution_messages(subtask.text, context)
+
+        try:
+            response = llm.invoke(messages)
+            response_text: str = response.content
+        except ServoRoutingError:
+            raise
+        except Exception as e:
+            raise ServoRoutingError(
+                message=f"LLM invocation failed: {e}",
+                subtask_id=subtask.id,
+                cause=e,
+            ) from e
+
+        with lock:
+            db.add(subtask.id, response_text)
+
+        return SubtaskExecutionResult(
+            subtask_id=subtask.id,
+            subtask_text=subtask.text,
+            complexity_id=category.id,
+            model=category.model,
+            response=response_text,
+            used_default_category=used_default,
+            depends_on=list(subtask.depends_on),
+        )
+
+    @staticmethod
+    def _compute_waves(subtasks: list[ContextualizedSubtask]) -> list[list[ContextualizedSubtask]]:
+        """Kahn's algorithm: returns subtasks grouped into dependency-ordered waves."""
+        id_to_subtask = {s.id: s for s in subtasks}
+        in_degree = {s.id: 0 for s in subtasks}
+        dependents: dict[str, list[str]] = {s.id: [] for s in subtasks}
+
+        for s in subtasks:
+            for dep in s.depends_on:
+                in_degree[s.id] += 1
+                dependents[dep].append(s.id)
+
+        ready = [s for s in subtasks if in_degree[s.id] == 0]
+        waves: list[list[ContextualizedSubtask]] = []
+        scheduled = 0
+
+        while ready:
+            waves.append(ready)
+            scheduled += len(ready)
+            next_ready: list[ContextualizedSubtask] = []
+            for s in ready:
+                for dep_id in dependents[s.id]:
+                    in_degree[dep_id] -= 1
+                    if in_degree[dep_id] == 0:
+                        next_ready.append(id_to_subtask[dep_id])
+            ready = next_ready
+
+        if scheduled != len(subtasks):
+            raise ServoRoutingError(message="Dependency graph contains a cycle")
+
+        return waves
+
+    def route_and_execute(
+        self,
+        contextualized: ContextualizedDecompositionResult,
+        db: ContextDB,
+        *,
+        max_workers: int = 4,
+    ) -> ExecutionResult:
+        """
+        Stage 5: dispatch each subtask to its routed LLM, respecting the dependency DAG.
+
+        Subtasks with no mutual dependencies run in parallel within each wave.
+        Each wave completes fully before the next wave begins, ensuring dependency
+        outputs are written to ContextDB before downstream subtasks read them.
+        """
+        if self._cached_config is None or self._cached_config.routing_config is None:
+            raise ServoDecompositionError(
+                message="Routing config not available for execution",
+                raw_content="",
+            )
+
+        waves = self._compute_waves(contextualized.subtasks)
+        lock = self._db_lock
+        all_results: list[SubtaskExecutionResult] = []
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for wave in waves:
+                futures = [executor.submit(self._execute_subtask, s, db, lock) for s in wave]
+                for f in futures:
+                    all_results.append(f.result())  # blocks until whole wave completes
+
+        return ExecutionResult(subtask_results=all_results)
+
+    def decompose_classify_embed_and_execute(
+        self,
+        prompt: str,
+        *,
+        timeout_s: float = 60.0,
+        max_workers: int = 4,
+    ) -> ExecutionResult:
+        """
+        Full pipeline convenience wrapper: decompose → classify → embed → route & execute.
+        Cleans up the ContextDB after execution.
+        """
+        contextualized, db = self.decompose_classify_and_embed(prompt, timeout_s=timeout_s)
+        try:
+            return self.route_and_execute(contextualized, db, max_workers=max_workers)
+        finally:
+            db.close()

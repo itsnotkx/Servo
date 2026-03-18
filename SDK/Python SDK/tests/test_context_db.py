@@ -20,10 +20,8 @@ from servo_sdk import (
 
 @pytest.fixture(scope="module")
 def embedding_fn():
-    from chromadb.utils.embedding_functions import FastEmbedEmbeddingFunction
-    return FastEmbedEmbeddingFunction(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+    return DefaultEmbeddingFunction()
 
 
 # ---------------------------------------------------------------------------
