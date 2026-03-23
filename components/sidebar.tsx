@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, CreditCard, Key, Route, Settings } from 'lucide-react'
+import { BarChart3, CreditCard, Key, Route, Settings, ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUser, useClerk } from '@clerk/nextjs'
 
@@ -16,6 +16,7 @@ export default function Sidebar({ activePage, setActivePage }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'api-keys', label: 'API Keys', icon: Key },
+    { id: 'logs', label: 'Execution Logs', icon: ScrollText },
     { id: 'routing', label: 'Routing', icon: Route },
     { id: 'billing', label: 'Billing', icon: CreditCard },
     { id: 'settings', label: 'Settings', icon: Settings },
