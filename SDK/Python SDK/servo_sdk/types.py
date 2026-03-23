@@ -291,11 +291,19 @@ class SubtaskExecutionResult:
     response: str                # raw text response from the LLM
     used_default_category: bool  # True if complexity_id had no matching category
     depends_on: list[str] = field(default_factory=list)
+    latency_ms: int = 0          # wall-clock time for this subtask's LLM call
+    input_tokens: int = 0        # prompt tokens reported by the provider (or tiktoken fallback)
+    output_tokens: int = 0       # completion tokens reported by the provider
+    cost: float = 0.0            # actual USD cost derived from provider-reported tokens
+    cost_savings: float = 0.0    # USD saved vs routing everything to the most expensive model
 
 
 @dataclass
 class ExecutionResult:
     subtask_results: list[SubtaskExecutionResult]
+    total_latency_ms: int = 0    # wall-clock time for the entire route_and_execute() call
+    total_cost: float = 0.0      # sum of cost across all subtasks (USD)
+    total_savings: float = 0.0   # sum of cost_savings across all subtasks (USD)
 
     @property
     def final_response(self) -> str:
@@ -324,6 +332,10 @@ class CachedConfig:
     tags: list[str]
     tiers: dict[str, str]
     routing_config: RoutingConfig | None = None
+    # model_id (lowercase) → (input $/1M tokens, output $/1M tokens) from Supabase
+    model_pricing: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # model with the highest output rate across all routing categories — savings baseline
+    baseline_model_id: str = ""
 
     @staticmethod
     def from_validate_response(d: dict[str, Any]) -> "CachedConfig":

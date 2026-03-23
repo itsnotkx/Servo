@@ -97,6 +97,11 @@ def _make_e2e_client() -> Servo:
             tags=[],
             tiers={c.id: c.model for c in _E2E_CATEGORIES},
             routing_config=_E2E_CONFIG,
+            model_pricing={
+                "gemma-3-27b-it": (0.10, 0.20),
+                "gemini-3.1-flash-lite-preview": (0.10, 0.40),
+            },
+            baseline_model_id="gemini-3.1-flash-lite-preview",
         )
 
     Servo.__post_init__ = _bypass_post_init
@@ -151,8 +156,11 @@ def test_e2e_simple_prompt() -> None:
     # Print output for human review
     print(f"\nExecution results ({len(result.subtask_results)} subtask(s)):")
     for r in result.subtask_results:
-        print(f"  [{r.complexity_id}] {r.subtask_id} → model={r.model}")
+        print(f"  [{r.complexity_id}] {r.subtask_id} -> model={r.model}")
+        print(f"    tokens: input={r.input_tokens} output={r.output_tokens} latency={r.latency_ms}ms")
+        print(f"    cost=${r.cost:.6f}  savings=${r.cost_savings:.6f}")
         print(f"    response: {r.response[:300]}")
+    print(f"\ntotal_cost=${result.total_cost:.6f}  total_savings=${result.total_savings:.6f}")
     print(f"\nfinal_response:\n{result.final_response}")
     print("=" * 60)
 
@@ -185,8 +193,8 @@ def test_e2e_complex_prompt() -> None:
 
     client = _make_e2e_client()
     prompt = (
-        "Explain what recursion is in one sentence, then write a Python function "
-        "that uses recursion to compute the factorial of a number."
+        "Write a Python function that recursively computes the nth Fibonacci number, "
+        "then use that function to compute fibonacci(10) and explain the result."
     )
 
     # Stage 1+2: decompose and classify
@@ -215,8 +223,11 @@ def test_e2e_complex_prompt() -> None:
     print(f"\nExecution results ({len(result.subtask_results)} subtask(s)):")
     for r in result.subtask_results:
         context_note = " [context injected]" if r.depends_on else ""
-        print(f"  [{r.complexity_id}] {r.subtask_id} → model={r.model}{context_note}")
+        print(f"  [{r.complexity_id}] {r.subtask_id} -> model={r.model}{context_note}")
+        print(f"    tokens: input={r.input_tokens} output={r.output_tokens} latency={r.latency_ms}ms")
+        print(f"    cost=${r.cost:.6f}  savings=${r.cost_savings:.6f}")
         print(f"    response: {r.response[:400]}")
+    print(f"\ntotal_cost=${result.total_cost:.6f}  total_savings=${result.total_savings:.6f}")
     print(f"\nfinal_response:\n{result.final_response}")
     print("=" * 60)
 
@@ -248,6 +259,6 @@ def test_e2e_complex_prompt() -> None:
     assert result.final_response == "\n\n".join(terminal_responses)
 
     assert result.final_response.strip() != "", "final_response must not be empty"
-    assert ("def " in result.final_response or "factorial" in result.final_response), (
-        f"Expected code output (def/factorial) in final response, got: {result.final_response!r}"
+    assert ("def " in result.final_response or "fibonacci" in result.final_response.lower()), (
+        f"Expected code output (def/fibonacci) in final response, got: {result.final_response!r}"
     )
