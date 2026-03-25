@@ -75,7 +75,16 @@ for st in classified.subtasks:
 
 contextualized, db = client.embed_and_contextualize(classified)
 try:
-    result = client.route_and_execute(contextualized, db)
+    result = client.route_and_execute(contextualized, db, original_prompt=PROMPT)
+
+    # Print RAG database contents
+    rag_contents = db.get_all()
+    print(f"\n{'='*60}\nRAG DATABASE ({len(rag_contents)} entries):\n{'='*60}")
+    for sid, content in rag_contents.items():
+        print(f"\n[ID: {sid}]\n{content[:500]}")
+        if len(content) > 500:
+            print(f"  ... ({len(content)} chars total)")
+    print(f"\n{'='*60}")
 finally:
     db.close()
 

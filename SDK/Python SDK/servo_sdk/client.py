@@ -85,6 +85,13 @@ class ContextDB:
         except Exception:
             pass
 
+    def get_all(self) -> dict[str, str]:
+        """Return all stored entries as {subtask_id: content}."""
+        result = self._collection.get()
+        ids = result.get("ids") or []
+        docs = result.get("documents") or []
+        return dict(zip(ids, docs))
+
     def search(self, query: str, k: int = 3) -> list[str]:
         """Semantic similarity search by text query. Used by Stage 5+ for fuzzy retrieval."""
         count = self._collection.count()
@@ -551,24 +558,30 @@ class Servo:
 
     @staticmethod
     @staticmethod
-    def _build_execution_messages(subtask_text: str, context: list[str], model: str = "") -> list:
+    def _build_execution_messages(subtask_text: str, context: list[str], model: str = "", original_prompt: str = "") -> list:
         """Build LangChain messages for a subtask, injecting dependency outputs as context.
 
         Gemma models do not support system messages, so the system content is prepended
         directly to the human message in that case.
         """
+        prompt_line = f"Original user question: {original_prompt}\n\n" if original_prompt else ""
+
         if context:
             context_blocks = "\n\n".join(
                 f"[Dependency {i + 1}]:\n{c}" for i, c in enumerate(context)
             )
             system_content = (
                 "You are a helpful assistant executing one step in a multi-step pipeline.\n"
+                f"{prompt_line}"
                 "The following are outputs from upstream steps that your task depends on:\n\n"
                 f"{context_blocks}\n\n"
                 "Use this context to complete your assigned task."
             )
         else:
-            system_content = "You are a helpful assistant. Complete the following task."
+            system_content = (
+                "You are a helpful assistant. Complete the following task.\n"
+                f"{prompt_line}"
+            )
 
         # Gemma models reject system messages — fold into the human turn instead.
         if model.lower().startswith("gemma-"):
@@ -581,12 +594,13 @@ class Servo:
         subtask: ContextualizedSubtask,
         db: ContextDB,
         lock: threading.Lock,
+        original_prompt: str = "",
     ) -> SubtaskExecutionResult:
         """Execute a single subtask: resolve category, fetch context, call LLM, write result."""
         category, used_default = self._resolve_category(subtask.complexity_id)
         context = db.get_context_for(subtask.depends_on)
         llm = self._build_llm(category)
-        messages = self._build_execution_messages(subtask.text, context, category.model)
+        messages = self._build_execution_messages(subtask.text, context, category.model, original_prompt)
 
         # Count input tokens locally with tiktoken as a fallback before the API call.
         tiktoken_input = self._count_tokens_tiktoken(messages)
@@ -838,6 +852,7 @@ class Servo:
         *,
         max_workers: int = 4,
         prompt_preview: str | None = None,
+        original_prompt: str = "",
     ) -> ExecutionResult:
         """
         Stage 5: dispatch each subtask to its routed LLM, respecting the dependency DAG.
@@ -862,7 +877,7 @@ class Servo:
         t0 = time.perf_counter()
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for wave in waves:
-                futures = [executor.submit(self._execute_subtask, s, db, lock) for s in wave]
+                futures = [executor.submit(self._execute_subtask, s, db, lock, original_prompt) for s in wave]
                 for f in futures:
                     all_results.append(f.result())  # blocks until whole wave completes
         total_latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -897,6 +912,7 @@ class Servo:
                 contextualized, db,
                 max_workers=max_workers,
                 prompt_preview=prompt,
+                original_prompt=prompt,
             )
         finally:
             db.close()
