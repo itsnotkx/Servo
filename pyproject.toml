@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "servo-sdk"
+version = "0.1.0"
+description = "Python SDK for the Servo backend (routing/classification)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+authors = [{ name = "Servo SDK Contributors" }]
+dependencies = [
+    "langchain-openai>=0.1.0",
+    "langchain-core>=0.1.0",
+    "pydantic>=2.0",
+    "chromadb>=0.5.0",
+    "fastembed>=0.3.0",
+    "tiktoken>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+google = ["langchain-google-genai>=2.0"]
+anthropic = ["langchain-anthropic>=0.1"]
+all-providers = ["langchain-google-genai>=2.0", "langchain-anthropic>=0.1"]
+
+[tool.setuptools.packages.find]
+where = ["."]
