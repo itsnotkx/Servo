@@ -761,9 +761,10 @@ class Servo:
         key = model.lower()
         if key in pricing_map:
             return pricing_map[key]
-        # Partial prefix match — handles versioned names like "gemini-2.5-flash-exp"
+        # Partial prefix match — handles versioned suffixes like "gemini-2.5-flash-exp"
+        # Require a "-" boundary so "gemini-2.5-flash" never matches "gemini-2.5-flash-lite"
         for name, pricing in pricing_map.items():
-            if key.startswith(name) or name.startswith(key):
+            if key.startswith(name + "-") or name.startswith(key + "-"):
                 return pricing
         return _DEFAULT_PRICING
 
@@ -883,7 +884,7 @@ class Servo:
         total_latency_ms = int((time.perf_counter() - t0) * 1000)
 
         # Async telemetry dispatch — non-blocking (builds payload first to get total_cost)
-        payload = self._build_telemetry_payload(all_results, total_latency_ms, prompt_preview)
+        payload = self._build_telemetry_payload(all_results, total_latency_ms, prompt_preview or original_prompt or None)
         self._dispatch_telemetry(payload)
 
         total_cost = sum(r.cost for r in all_results)
