@@ -2,11 +2,19 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
+import { syncUserApiKeyAggregates } from '@/lib/execution-log-aggregates'
 
 export async function GET() {
   const { userId } = await auth()
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    await syncUserApiKeyAggregates(userId)
+  } catch (error) {
+    console.error('[api/keys] aggregate sync error:', error)
+    return NextResponse.json({ error: 'Failed to sync key totals' }, { status: 500 })
   }
 
   const { data, error } = await supabase

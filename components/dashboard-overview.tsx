@@ -13,12 +13,19 @@ interface ApiKey {
   total_savings: number
 }
 
+interface ModelUsageEntry {
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cost: number
+}
+
 interface ExecutionLog {
   id: string
   created_at: string
   total_cost: number
   total_savings: number
-  model_usage: Record<string, number>
+  model_usage: Record<string, ModelUsageEntry>
 }
 
 export default function DashboardOverview() {
@@ -36,9 +43,9 @@ export default function DashboardOverview() {
     }).finally(() => setLoading(false))
   }, [])
 
-  const totalCost = keys.reduce((sum, k) => sum + (k.cost ?? 0), 0)
-  const totalSavings = keys.reduce((sum, k) => sum + (k.total_savings ?? 0), 0)
-  const totalRequests = keys.reduce((sum, k) => sum + (k.requests ?? 0), 0)
+  const totalCost = logs.reduce((sum, log) => sum + (log.total_cost ?? 0), 0)
+  const totalSavings = logs.reduce((sum, log) => sum + (log.total_savings ?? 0), 0)
+  const totalRequests = logs.length
   const optimizationRate = totalCost + totalSavings > 0
     ? (totalSavings / (totalCost + totalSavings)) * 100
     : 0
@@ -54,8 +61,8 @@ export default function DashboardOverview() {
   const modelTotals: Record<string, number> = {}
   for (const log of logs) {
     if (log.model_usage) {
-      for (const [model, count] of Object.entries(log.model_usage)) {
-        modelTotals[model] = (modelTotals[model] ?? 0) + (count as number)
+      for (const [model, usage] of Object.entries(log.model_usage)) {
+        modelTotals[model] = (modelTotals[model] ?? 0) + usage.requests
       }
     }
   }
