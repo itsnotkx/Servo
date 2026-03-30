@@ -11,9 +11,9 @@ VALID_VALIDATE_RESPONSE = {
     "valid": True,
     "key_id": "key-123",
     "user_id": "user-456",
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.1-flash-lite",
     "tags": ["prod"],
-    "tiers": {"simple": "gemma-3-27b-it", "complex": "gemini-2.5-flash"},
+    "tiers": {"simple": "gemini-2.5-flash-lite", "complex": "gemini-3.1-flash-lite"},
 }
 
 VALID_ROUTING_RESPONSE = {
@@ -25,7 +25,7 @@ VALID_ROUTING_RESPONSE = {
             "description": "Simple queries",
             "provider": "google",
             "endpoint": "https://api.example.com",
-            "model_id": "gemma-3-27b-it",
+            "model_id": "gemini-2.5-flash-lite",
         },
         {
             "id": "complex",
@@ -33,7 +33,7 @@ VALID_ROUTING_RESPONSE = {
             "description": "Complex queries",
             "provider": "google",
             "endpoint": "https://api.example.com",
-            "model_id": "gemini-2.5-flash",
+            "model_id": "gemini-3.1-flash-lite",
         },
     ],
 }
@@ -83,9 +83,9 @@ def test_init_validates_and_caches(monkeypatch):
     assert client.config is not None
     assert client.config.key_id == "key-123"
     assert client.config.user_id == "user-456"
-    assert client.config.model == "gemini-2.5-flash"
+    assert client.config.model == "gemini-3.1-flash-lite"
     assert client.config.tags == ["prod"]
-    assert client.config.tiers == {"simple": "gemma-3-27b-it", "complex": "gemini-2.5-flash"}
+    assert client.config.tiers == {"simple": "gemini-2.5-flash-lite", "complex": "gemini-3.1-flash-lite"}
     assert client.user_id == "user-456"
 
     assert ("POST", "/api/sdk/validate") in call_log

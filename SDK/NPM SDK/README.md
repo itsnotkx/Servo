@@ -33,7 +33,7 @@ const result = await client.send('Who was the first president of the United Stat
 
 // 3. Receive response
 console.log(result.classification.category_id);  // e.g., 'simple' or 'complex'
-console.log(result.target_model);                // e.g., 'gemma-3-27b-it'
+console.log(result.target_model);                // e.g., 'gemini-2.5-flash-lite'
 console.log(result.llm_response);                // actual LLM response
 ```
 
@@ -93,7 +93,7 @@ console.log(classification.requires_chunking);   // boolean
 
 // Step 2: Route to appropriate model
 const routing = await client.route(classification);
-console.log(routing.target_model);  // e.g., 'gemini-2.5-flash'
+console.log(routing.target_model);  // e.g., 'gemini-3.1-flash-lite'
 ```
 
 ### Health Check & Tiers
@@ -105,7 +105,7 @@ console.log(health);
 
 // Get available model tiers
 const tiers = await client.tiers();
-console.log(tiers.tiers);  // { simple: 'gemma-3-27b-it', complex: 'gemini-2.5-flash' }
+console.log(tiers.tiers);  // { simple: 'gemini-2.5-flash-lite', complex: 'gemini-3.1-flash-lite' }
 
 // Get available categories with full metadata
 const categories = await client.categories();

@@ -213,15 +213,14 @@ export default function ApiKeysPage() {
                     <SelectValue placeholder="Select a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Gemma 27B">Gemma 27B</SelectItem>
-                    <SelectItem value="Claude-Opus-4.5">Claude-Opus-4.5</SelectItem>
-                    <SelectItem value="GPT-4">GPT-4</SelectItem>
-                    <SelectItem value="GPT-3.5">GPT-3.5</SelectItem>
-                    <SelectItem value="Claude">Claude</SelectItem>
-                    <SelectItem value="Claude-3-Opus">Claude 3 Opus</SelectItem>
-                    <SelectItem value="Claude-3-Sonnet">Claude 3 Sonnet</SelectItem>
-                    <SelectItem value="Gemini-3-Pro">Gemini-3-Pro</SelectItem>
-                    <SelectItem value="Llama-2">Llama 2</SelectItem>
+                    <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</SelectItem>
+                    <SelectItem value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</SelectItem>
+                    <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                    <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
+                    <SelectItem value="claude-opus-4-5">Claude Opus 4.5</SelectItem>
+                    <SelectItem value="claude-sonnet-4-5">Claude Sonnet 4.5</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

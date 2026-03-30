@@ -21,7 +21,7 @@ CLASSIFIER_URL = os.environ.get("CLASSIFIER_ENDPOINT", "http://localhost:8080")
 
 CATEGORIES = [
     RoutingCategory(id="simple",  name="Simple",  description="Straightforward, no reasoning",    model="gemini-2.5-flash-lite"),
-    RoutingCategory(id="complex", name="Complex", description="Multi-step reasoning required",     model="gemini-3.1-flash-lite-preview"),
+    RoutingCategory(id="complex", name="Complex", description="Multi-step reasoning required",     model="gemini-3.1-flash-lite"),
 ]
 CONFIG = RoutingConfig(default_category_id="simple", categories=CATEGORIES)
 
@@ -45,9 +45,9 @@ def _bypass(self: Servo) -> None:
         routing_config=CONFIG,
         model_pricing={
             "gemini-2.5-flash-lite": (0.10, 0.20),
-            "gemini-3.1-flash-lite-preview": (0.10, 0.40),
+            "gemini-3.1-flash-lite": (0.10, 0.40),
         },
-        baseline_model_id="gemini-3.1-flash-lite-preview",
+        baseline_model_id="gemini-3.1-flash-lite",
     )
 
 Servo.__post_init__ = _bypass

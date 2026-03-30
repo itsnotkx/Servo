@@ -39,7 +39,7 @@ result = client.send("Who was the first president of the United States?")
 
 # 3. Receive response
 print(result.classification.category_id)     # e.g., 'simple' or 'complex'
-print(result.target_model)                   # e.g., 'gemma-3-27b-it'
+print(result.target_model)                   # e.g., 'gemini-2.5-flash-lite'
 print(result.llm_response)                   # actual LLM response
 ```
 
@@ -95,7 +95,7 @@ print(classification.requires_chunking)   # boolean
 
 # Step 2: Route to appropriate model
 routing = client.route(classification)
-print(routing.target_model)  # e.g., 'gemini-2.5-flash'
+print(routing.target_model)  # e.g., 'gemini-3.1-flash-lite'
 ```
 
 ### Health Check & Tiers
@@ -107,7 +107,7 @@ print(health)
 
 # Get available model tiers
 tiers = client.tiers()
-print(tiers.tiers)  # {'simple': 'gemma-3-27b-it', 'complex': 'gemini-2.5-flash'}
+print(tiers.tiers)  # {'simple': 'gemini-2.5-flash-lite', 'complex': 'gemini-3.1-flash-lite'}
 
 # Get available categories with full metadata
 categories = client.categories()
