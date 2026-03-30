@@ -8,22 +8,95 @@ Usage:
     python try_servo.py
 """
 import os
+<<<<<<< HEAD
 import threading
+=======
+from pathlib import Path
+>>>>>>> 6b44263 (Move SDK test keys to env and expand try_servo prompts)
 
 from servo_sdk import Servo, RoutingCategory
 from servo_sdk.client import ContextDB
 from servo_sdk.types import CachedConfig, RoutingConfig
 
+
+def load_repo_env() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_repo_env()
+
 # ---------------------------------------------------------------------------
+<<<<<<< HEAD
 # Config — change these or set env vars
 # ---------------------------------------------------------------------------
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_STUDIO_API_KEY", "YOUR_KEY_HERE")
+=======
+# Keys - stored in the repo root .env file or your shell environment
+# ---------------------------------------------------------------------------
+
+SERVO_API_KEY = os.environ.get("SERVO_API_KEY", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_STUDIO_API_KEY", "")
+>>>>>>> 6b44263 (Move SDK test keys to env and expand try_servo prompts)
 CLASSIFIER_URL = os.environ.get("CLASSIFIER_ENDPOINT", "http://localhost:8080")
 
+<<<<<<< HEAD
 CATEGORIES = [
     RoutingCategory(id="simple",  name="Simple",  description="Straightforward, no reasoning",  model="gemini-2.5-flash-lite"),
     RoutingCategory(id="complex", name="Complex", description="Multi-step reasoning required",   model="gemini-3.1-flash-lite-preview"),
+=======
+if not SERVO_API_KEY or not GOOGLE_API_KEY:
+    raise RuntimeError("Set SERVO_API_KEY and GOOGLE_AI_STUDIO_API_KEY in the repo root .env file.")
+
+# ---------------------------------------------------------------------------
+# Init client - validates your key and fetches your routing config
+# ---------------------------------------------------------------------------
+
+os.environ["SERVO_ENDPOINT"] = SERVO_ENDPOINT
+
+client = Servo(
+    api_key=SERVO_API_KEY,
+    classifier_url=CLASSIFIER_URL,
+    provider_api_keys={"google": GOOGLE_API_KEY},
+)
+
+# ---------------------------------------------------------------------------
+# Test prompts
+# ---------------------------------------------------------------------------
+
+PROMPTS = [
+    (
+        "simple",
+        "What is the capital of France, and what is it most famous for?",
+    ),
+    (
+        "complex",
+        (
+            "Design a scalable microservices architecture for an e-commerce platform. "
+            "Include service decomposition, inter-service communication patterns, "
+            "a strategy for handling distributed transactions, and how you would "
+            "approach fault tolerance and observability across services."
+        ),
+    ),
+    (
+        "mixed",
+        (
+            "What is the capital of Japan? "
+            "What is machine learning? "
+            "Then design and implement a neural network from scratch in Python (no ML libraries) "
+            "that learns XOR, explaining backpropagation and the role of activation functions."
+        ),
+    ),
+>>>>>>> 6b44263 (Move SDK test keys to env and expand try_servo prompts)
 ]
 CONFIG = RoutingConfig(default_category_id="simple", categories=CATEGORIES)
 
