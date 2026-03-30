@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { syncApiKeyAggregates } from '@/lib/execution-log-aggregates'
 
 export async function POST(request: Request) {
   // --- Auth: Bearer token ---
@@ -32,12 +33,11 @@ export async function POST(request: Request) {
 
   const totalCost: number = typeof body.total_cost === 'number' ? body.total_cost : 0
   const totalSavings: number = typeof body.total_savings === 'number' ? body.total_savings : 0
-
-  // --- Write execution log ---
-  const { error: insertErr } = await supabase.from('execution_logs').insert({
+  const promptPreview = typeof body.prompt_preview === 'string' ? body.prompt_preview : null
+  const logPayload = {
     key_id: keyRow.id,
     user_id: keyRow.user_id,
-    prompt_preview: body.prompt_preview ?? null,
+    prompt_preview: promptPreview,
     subtask_count: body.subtask_count ?? 0,
     total_latency_ms: body.total_latency_ms ?? null,
     total_input_tokens: body.total_input_tokens ?? 0,
@@ -46,20 +46,58 @@ export async function POST(request: Request) {
     total_savings: totalSavings,
     chunks: body.chunks ?? [],
     model_usage: body.model_usage ?? {},
-  })
+  }
 
-  if (insertErr) {
-    console.error('[telemetry] insert error:', insertErr)
+  // --- Write execution log ---
+  let writeError: unknown = null
+
+  if (promptPreview) {
+    const { data: existingLog, error: lookupErr } = await supabase
+      .from('execution_logs')
+      .select('id')
+      .eq('key_id', keyRow.id)
+      .eq('prompt_preview', promptPreview)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (lookupErr) {
+      console.error('[telemetry] lookup error:', lookupErr)
+      return NextResponse.json({ error: 'Failed to write telemetry' }, { status: 500 })
+    }
+
+    if (existingLog) {
+      const { error: updateErr } = await supabase
+        .from('execution_logs')
+        .update({
+          ...logPayload,
+          created_at: new Date().toISOString(),
+        })
+        .eq('id', existingLog.id)
+      writeError = updateErr
+    } else {
+      const { error: insertErr } = await supabase
+        .from('execution_logs')
+        .insert(logPayload)
+      writeError = insertErr
+    }
+  } else {
+    const { error: insertErr } = await supabase
+      .from('execution_logs')
+      .insert(logPayload)
+    writeError = insertErr
+  }
+
+  if (writeError) {
+    console.error('[telemetry] write error:', writeError)
     return NextResponse.json({ error: 'Failed to write telemetry' }, { status: 500 })
   }
 
-  // --- Atomically increment api_keys.requests, cost, and savings ---
-  await supabase.rpc('increment_api_key_requests', { p_key_id: keyRow.id })
-  if (totalCost > 0) {
-    await supabase.rpc('increment_api_key_cost', { p_key_id: keyRow.id, p_cost: totalCost })
-  }
-  if (totalSavings > 0) {
-    await supabase.rpc('increment_api_key_savings', { p_key_id: keyRow.id, p_savings: totalSavings })
+  try {
+    await syncApiKeyAggregates(keyRow.id)
+  } catch (aggregateError) {
+    console.error('[telemetry] aggregate sync error:', aggregateError)
+    return NextResponse.json({ error: 'Failed to update usage totals' }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true }, { status: 201 })
