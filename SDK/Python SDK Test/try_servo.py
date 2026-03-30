@@ -11,17 +11,37 @@ Setup:
            python try_servo.py
 """
 import os
+from pathlib import Path
 
 from servo_sdk import Servo
 
+
+def load_repo_env() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_repo_env()
+
 # ---------------------------------------------------------------------------
-# Keys - replace these or set them as environment variables
+# Keys - stored in the repo root .env file or your shell environment
 # ---------------------------------------------------------------------------
 
-SERVO_API_KEY = os.environ.get("SERVO_API_KEY", "sk_live_529cc89db50009bbd4248f837163d593")
-GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_STUDIO_API_KEY", "AIzaSyBYQe6Swlvx_N3xqRvjZHeClnRJTVdJIao")
+SERVO_API_KEY = os.environ.get("SERVO_API_KEY", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_STUDIO_API_KEY", "")
 CLASSIFIER_URL = os.environ.get("CLASSIFIER_ENDPOINT", "http://localhost:8080")
 SERVO_ENDPOINT = os.environ.get("SERVO_ENDPOINT", "http://localhost:3000")
+
+if not SERVO_API_KEY or not GOOGLE_API_KEY:
+    raise RuntimeError("Set SERVO_API_KEY and GOOGLE_AI_STUDIO_API_KEY in the repo root .env file.")
 
 # ---------------------------------------------------------------------------
 # Init client - validates your key and fetches your routing config
