@@ -1,50 +1,28 @@
 # Python SDK Test
 
-Test suite for the Servo Python SDK.
+Quick-start folder for trying the Servo Python SDK locally.
 
 ## Setup
 
 ```bash
-# Install the SDK in development mode
-pip install -e "../Python SDK"
+cd "SDK/Python SDK Test"
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e "../Python SDK[google]"
 ```
 
-## Running Tests
+## Run
 
-Make sure the Servo backend is running on `http://localhost:8000`:
+Make sure the classifier (llama-server) is running on port 8080, then:
 
 ```bash
-# From the Servo folder
-uvicorn inference.server:app --host 0.0.0.0 --port 8000 --reload
+python try_servo.py
 ```
 
-Then run the tests:
+You can override defaults with environment variables:
 
 ```bash
-# Basic test
-python test_basic.py
-
-# Conversation test
-python test_conversation.py
+export GOOGLE_AI_STUDIO_API_KEY="your-key"
+export CLASSIFIER_ENDPOINT="http://100.74.1.39:8080"   # remote machine via Tailscale
+python try_servo.py
 ```
-
-## Test Files
-
-- **test_basic.py** - Basic SDK functionality (health, categories, classify, route, send)
-- **test_conversation.py** - Conversation context management
-
-## Expected Output
-
-The tests should output:
-- Health check status
-- Available categories
-- Classification results with category_id and category_name
-- Target model routing
-- LLM responses
-- Confidence scores
-
-## Requirements
-
-- Python 3.10+
-- Servo backend running
-- Python SDK installed

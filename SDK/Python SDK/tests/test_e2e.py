@@ -1,7 +1,7 @@
 """
 E2E integration tests for the full Stage 5 pipeline (decompose → classify → embed → route → execute).
 
-Uses a 2-category routing config (Simple→Gemma, Complex→GeminiFlashLite) and breaks out
+Uses a 2-category routing config (Simple→Gemini 2.5 Flash Lite, Complex→Gemini 2.5 Flash) and breaks out
 each pipeline stage explicitly so the flow is visible in test output.
 
 Run with:
@@ -38,20 +38,20 @@ _E2E_CATEGORIES = [
         id="simple",
         name="Simple",
         description="Straightforward, no reasoning",
-        model="gemma-3-27b-it",
+        model="gemini-2.5-flash-lite",
     ),
     RoutingCategory(
         id="complex",
         name="Complex",
         description="Multi-step reasoning required",
-        model="gemini-3.1-flash-lite-preview",
+        model="gemini-2.5-flash",
     ),
 ]
 _E2E_CONFIG = RoutingConfig(default_category_id="simple", categories=_E2E_CATEGORIES)
 
 _CLASSIFIER_URL: str = os.environ.get("CLASSIFIER_ENDPOINT", "http://localhost:8080")
 
-_E2E_MODELS = {"gemma-3-27b-it", "gemini-3.1-flash-lite-preview"}
+_E2E_MODELS = {"gemini-2.5-flash-lite", "gemini-2.5-flash"}
 
 # ---------------------------------------------------------------------------
 # Skip markers
@@ -97,6 +97,11 @@ def _make_e2e_client() -> Servo:
             tags=[],
             tiers={c.id: c.model for c in _E2E_CATEGORIES},
             routing_config=_E2E_CONFIG,
+            model_pricing={
+                "gemini-2.5-flash-lite": (0.10, 0.20),
+                "gemini-2.5-flash": (0.15, 0.60),
+            },
+            baseline_model_id="gemini-2.5-flash",
         )
 
     Servo.__post_init__ = _bypass_post_init
@@ -151,8 +156,11 @@ def test_e2e_simple_prompt() -> None:
     # Print output for human review
     print(f"\nExecution results ({len(result.subtask_results)} subtask(s)):")
     for r in result.subtask_results:
-        print(f"  [{r.complexity_id}] {r.subtask_id} → model={r.model}")
+        print(f"  [{r.complexity_id}] {r.subtask_id} -> model={r.model}")
+        print(f"    tokens: input={r.input_tokens} output={r.output_tokens} latency={r.latency_ms}ms")
+        print(f"    cost=${r.cost:.6f}  savings=${r.cost_savings:.6f}")
         print(f"    response: {r.response[:300]}")
+    print(f"\ntotal_cost=${result.total_cost:.6f}  total_savings=${result.total_savings:.6f}")
     print(f"\nfinal_response:\n{result.final_response}")
     print("=" * 60)
 
@@ -185,8 +193,8 @@ def test_e2e_complex_prompt() -> None:
 
     client = _make_e2e_client()
     prompt = (
-        "Explain what recursion is in one sentence, then write a Python function "
-        "that uses recursion to compute the factorial of a number."
+        "Write a Python function that recursively computes the nth Fibonacci number, "
+        "then use that function to compute fibonacci(10) and explain the result."
     )
 
     # Stage 1+2: decompose and classify
@@ -215,8 +223,11 @@ def test_e2e_complex_prompt() -> None:
     print(f"\nExecution results ({len(result.subtask_results)} subtask(s)):")
     for r in result.subtask_results:
         context_note = " [context injected]" if r.depends_on else ""
-        print(f"  [{r.complexity_id}] {r.subtask_id} → model={r.model}{context_note}")
+        print(f"  [{r.complexity_id}] {r.subtask_id} -> model={r.model}{context_note}")
+        print(f"    tokens: input={r.input_tokens} output={r.output_tokens} latency={r.latency_ms}ms")
+        print(f"    cost=${r.cost:.6f}  savings=${r.cost_savings:.6f}")
         print(f"    response: {r.response[:400]}")
+    print(f"\ntotal_cost=${result.total_cost:.6f}  total_savings=${result.total_savings:.6f}")
     print(f"\nfinal_response:\n{result.final_response}")
     print("=" * 60)
 
@@ -247,7 +258,70 @@ def test_e2e_complex_prompt() -> None:
     ]
     assert result.final_response == "\n\n".join(terminal_responses)
 
+
+@_needs_live
+def test_e2e_portfolio_website() -> None:
+    """
+    Live E2E — portfolio website prompt.
+
+    A multi-step prompt asking for instructions to build a portfolio website.
+    Expects multiple subtasks covering planning, design, and implementation steps,
+    with at least one routed to the complex tier.
+    """
+    if not _classifier_reachable():
+        pytest.skip(f"Classifier not reachable at {_CLASSIFIER_URL}")
+
+    client = _make_e2e_client()
+    prompt = (
+        "Give me step-by-step instructions to build a personal portfolio website. "
+        "Include what pages to create, what tech stack to use, and how to deploy it."
+    )
+
+    # Stage 1+2: decompose and classify
+    classified = client.decompose_and_classify(prompt)
+    print(f"\n{'='*60}")
+    print(f"Prompt: {prompt}")
+    print(f"Subtasks after decompose+classify ({len(classified.subtasks)}):")
+    for st in classified.subtasks:
+        depends = f" (depends_on={st.depends_on})" if st.depends_on else ""
+        print(f"  [{st.complexity_id}] {st.id}: {st.text}{depends}")
+
+    # Stage 3: embed and contextualize
+    contextualized, db = client.embed_and_contextualize(classified)
+    try:
+        for st in contextualized.subtasks:
+            stored = db.get_by_id(st.id)
+            assert stored, f"Expected DB entry for subtask {st.id!r}, got empty result"
+
+        # Stage 4+5: route and execute
+        result = client.route_and_execute(contextualized, db)
+    finally:
+        db.close()
+
+    print(f"\nExecution results ({len(result.subtask_results)} subtask(s)):")
+    for r in result.subtask_results:
+        context_note = " [context injected]" if r.depends_on else ""
+        print(f"  [{r.complexity_id}] {r.subtask_id} -> model={r.model}{context_note}")
+        print(f"    tokens: input={r.input_tokens} output={r.output_tokens} latency={r.latency_ms}ms")
+        print(f"    cost=${r.cost:.6f}  savings=${r.cost_savings:.6f}")
+        print(f"    response: {r.response[:400]}")
+    print(f"\ntotal_cost=${result.total_cost:.6f}  total_savings=${result.total_savings:.6f}")
+    print(f"\nfinal_response:\n{result.final_response}")
+    print("=" * 60)
+
+    assert len(result.subtask_results) >= 2, (
+        f"Expected >= 2 subtasks for portfolio prompt, got {len(result.subtask_results)}"
+    )
+    assert result.final_response, "Expected a non-empty final response"
+    for r in result.subtask_results:
+        assert r.complexity_id in {"simple", "complex"}, (
+            f"Unexpected complexity_id {r.complexity_id!r}"
+        )
+        assert r.model in _E2E_MODELS, (
+            f"Unexpected model {r.model!r}"
+        )
+
     assert result.final_response.strip() != "", "final_response must not be empty"
-    assert ("def " in result.final_response or "factorial" in result.final_response), (
-        f"Expected code output (def/factorial) in final response, got: {result.final_response!r}"
+    assert ("def " in result.final_response or "fibonacci" in result.final_response.lower()), (
+        f"Expected code output (def/fibonacci) in final response, got: {result.final_response!r}"
     )

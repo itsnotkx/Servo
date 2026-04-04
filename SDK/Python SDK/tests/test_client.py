@@ -13,7 +13,7 @@ VALID_VALIDATE_RESPONSE = {
     "user_id": "user-456",
     "model": "gemini-2.5-flash",
     "tags": ["prod"],
-    "tiers": {"simple": "gemma-3-27b-it", "complex": "gemini-2.5-flash"},
+    "tiers": {"simple": "gemini-2.5-flash-lite", "complex": "gemini-2.5-flash"},
 }
 
 VALID_ROUTING_RESPONSE = {
@@ -25,7 +25,7 @@ VALID_ROUTING_RESPONSE = {
             "description": "Simple queries",
             "provider": "google",
             "endpoint": "https://api.example.com",
-            "model_id": "gemma-3-27b-it",
+            "model_id": "gemini-2.5-flash-lite",
         },
         {
             "id": "complex",
@@ -85,7 +85,7 @@ def test_init_validates_and_caches(monkeypatch):
     assert client.config.user_id == "user-456"
     assert client.config.model == "gemini-2.5-flash"
     assert client.config.tags == ["prod"]
-    assert client.config.tiers == {"simple": "gemma-3-27b-it", "complex": "gemini-2.5-flash"}
+    assert client.config.tiers == {"simple": "gemini-2.5-flash-lite", "complex": "gemini-2.5-flash"}
     assert client.user_id == "user-456"
 
     assert ("POST", "/api/sdk/validate") in call_log

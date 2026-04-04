@@ -291,29 +291,36 @@ class SubtaskExecutionResult:
     response: str                # raw text response from the LLM
     used_default_category: bool  # True if complexity_id had no matching category
     depends_on: list[str] = field(default_factory=list)
+    latency_ms: int = 0          # wall-clock time for this subtask's LLM call
+    input_tokens: int = 0        # prompt tokens reported by the provider (or tiktoken fallback)
+    output_tokens: int = 0       # completion tokens reported by the provider
+    cost: float = 0.0            # actual USD cost derived from provider-reported tokens
+    cost_savings: float = 0.0    # USD saved vs routing everything to the most expensive model
 
 
 @dataclass
 class ExecutionResult:
     subtask_results: list[SubtaskExecutionResult]
+    total_latency_ms: int = 0    # wall-clock time for the entire route_and_execute() call
+    total_cost: float = 0.0      # sum of cost across all subtasks (USD)
+    total_savings: float = 0.0   # sum of cost_savings across all subtasks (USD)
 
     @property
     def final_response(self) -> str:
-        """Returns responses of terminal subtasks (those nothing else depends on).
+        """Summarize all subtask responses in execution order.
 
-        Single subtask → return its response directly.
-        Multiple subtasks → identify terminal nodes (IDs not referenced in any depends_on),
-        join their responses with double newlines.
+        Produces a cohesive summary incorporating every subtask's output,
+        giving the user a complete picture of the work done across all steps.
         """
         if not self.subtask_results:
             return ""
         if len(self.subtask_results) == 1:
             return self.subtask_results[0].response
-        dependency_ids: set[str] = set()
+
+        parts: list[str] = []
         for r in self.subtask_results:
-            dependency_ids.update(r.depends_on)
-        terminals = [r for r in self.subtask_results if r.subtask_id not in dependency_ids]
-        return "\n\n".join(t.response for t in terminals)
+            parts.append(f"[Subtask {r.subtask_id} — {r.complexity_id}/{r.model}]\n{r.response}")
+        return "\n\n".join(parts)
 
 
 @dataclass
@@ -324,6 +331,10 @@ class CachedConfig:
     tags: list[str]
     tiers: dict[str, str]
     routing_config: RoutingConfig | None = None
+    # model_id (lowercase) → (input $/1M tokens, output $/1M tokens) from Supabase
+    model_pricing: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # model with the highest output rate across all routing categories — savings baseline
+    baseline_model_id: str = ""
 
     @staticmethod
     def from_validate_response(d: dict[str, Any]) -> "CachedConfig":

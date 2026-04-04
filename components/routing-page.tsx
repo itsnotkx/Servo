@@ -25,6 +25,17 @@ interface RoutingConfig {
   categories: Category[]
 }
 
+const SUPPORTED_MODELS: ModelOption[] = [
+  { model: 'gemini-2.5-flash-lite', keyName: 'Google' },
+  { model: 'gemini-2.5-flash', keyName: 'Google' },
+  { model: 'gemini-2.5-pro', keyName: 'Google' },
+  { model: 'gpt-4o-mini', keyName: 'OpenAI' },
+  { model: 'gpt-4o', keyName: 'OpenAI' },
+  { model: 'claude-haiku-4-5', keyName: 'Anthropic' },
+  { model: 'claude-sonnet-4-5', keyName: 'Anthropic' },
+  { model: 'claude-opus-4-5', keyName: 'Anthropic' },
+]
+
 // Defined outside component so ReactFlow doesn't recreate on every render
 const NODE_TYPES: NodeTypes = {
   classifierNode: ClassifierNode,
@@ -107,20 +118,13 @@ export default function RoutingPage() {
     })
   }, [])
 
-  // Load routing config and available models on mount
+  // Load routing config on mount
   useEffect(() => {
-    Promise.all([
-      fetch('/api/routing').then((r) => r.json()),
-      fetch('/api/keys').then((r) => r.json()),
-    ])
-      .then(([routingConfig, keys]) => {
+    fetch('/api/routing')
+      .then((r) => r.json())
+      .then((routingConfig) => {
         setConfig(routingConfig as RoutingConfig)
-        const seen = new Set<string>()
-        const models = (keys as { model: string; name: string; status: string }[])
-          .filter((k) => k.status === 'active' && k.model)
-          .map((k): ModelOption => ({ model: k.model, keyName: k.name }))
-          .filter((m) => (seen.has(m.model) ? false : (seen.add(m.model), true)))
-        setAvailableModels(models)
+        setAvailableModels(SUPPORTED_MODELS)
       })
       .catch(() => setLoadError(true))
   }, [])

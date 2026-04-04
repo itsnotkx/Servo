@@ -21,13 +21,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 interface ApiKey {
   id: string
@@ -69,7 +62,6 @@ export default function ApiKeysPage() {
   // Create dialog state
   const [createOpen, setCreateOpen] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyModel, setNewKeyModel] = useState('')
   const [newKeyTags, setNewKeyTags] = useState('')
   const [creating, setCreating] = useState(false)
 
@@ -117,7 +109,7 @@ export default function ApiKeysPage() {
   }
 
   const handleAddKey = async () => {
-    if (!newKeyName || !newKeyModel) return
+    if (!newKeyName) return
     setCreating(true)
 
     const tags = newKeyTags
@@ -128,7 +120,7 @@ export default function ApiKeysPage() {
     const res = await fetch('/api/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newKeyName, model: newKeyModel, tags }),
+      body: JSON.stringify({ name: newKeyName, tags }),
     })
 
     setCreating(false)
@@ -140,7 +132,6 @@ export default function ApiKeysPage() {
     setKeys((prev) => [keyWithoutSecret, ...prev])
     setCreateOpen(false)
     setNewKeyName('')
-    setNewKeyModel('')
     setNewKeyTags('')
     setRevealKey(key)
     setRevealOpen(true)
@@ -193,7 +184,7 @@ export default function ApiKeysPage() {
             <DialogHeader>
               <DialogTitle>Create New API Key</DialogTitle>
               <DialogDescription>
-                Generate a new API key for a specific model. Add tags to organize your keys.
+                Generate a new API key for Servo. Add tags to organize your keys.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -205,25 +196,6 @@ export default function ApiKeysPage() {
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="model">Model</Label>
-                <Select value={newKeyModel} onValueChange={setNewKeyModel}>
-                  <SelectTrigger id="model">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Gemma 27B">Gemma 27B</SelectItem>
-                    <SelectItem value="Claude-Opus-4.5">Claude-Opus-4.5</SelectItem>
-                    <SelectItem value="GPT-4">GPT-4</SelectItem>
-                    <SelectItem value="GPT-3.5">GPT-3.5</SelectItem>
-                    <SelectItem value="Claude">Claude</SelectItem>
-                    <SelectItem value="Claude-3-Opus">Claude 3 Opus</SelectItem>
-                    <SelectItem value="Claude-3-Sonnet">Claude 3 Sonnet</SelectItem>
-                    <SelectItem value="Gemini-3-Pro">Gemini-3-Pro</SelectItem>
-                    <SelectItem value="Llama-2">Llama 2</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="tags">Tags</Label>
@@ -289,9 +261,6 @@ export default function ApiKeysPage() {
                     Key ID
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Model
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Tags
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -326,11 +295,6 @@ export default function ApiKeysPage() {
                       <code className="text-xs bg-secondary bg-opacity-50 px-2 py-1 rounded text-accent">
                         {key.key_prefix}****{key.key_suffix}
                       </code>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-block bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs font-medium">
-                        {key.model}
-                      </span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-1 flex-wrap">

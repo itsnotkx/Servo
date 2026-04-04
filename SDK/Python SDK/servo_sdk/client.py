@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -84,6 +85,13 @@ class ContextDB:
         except Exception:
             pass
 
+    def get_all(self) -> dict[str, str]:
+        """Return all stored entries as {subtask_id: content}."""
+        result = self._collection.get()
+        ids = result.get("ids") or []
+        docs = result.get("documents") or []
+        return dict(zip(ids, docs))
+
     def search(self, query: str, k: int = 3) -> list[str]:
         """Semantic similarity search by text query. Used by Stage 5+ for fuzzy retrieval."""
         count = self._collection.count()
@@ -98,6 +106,10 @@ class ContextDB:
 
 _SERVO_ENDPOINT = "https://servo.example.com"  # TODO: set to real prod URL
 _CLASSIFIER_DEFAULT = "http://localhost:8080"
+
+# Fallback pricing used when a model is not found in the Supabase model_pricing table.
+# Intentionally mid-range — errs on the side of slightly overestimating cost.
+_DEFAULT_PRICING: tuple[float, float] = (2.00, 8.00)
 
 _DECOMPOSE_SYSTEM_PROMPT = (
     "You are a task decomposition assistant. "
@@ -127,6 +139,7 @@ class Servo:
     api_key: str
     timeout_s: float = 30.0
     classifier_url: str | None = None
+    telemetry_mode: str = "async"
     provider_api_keys: dict[str, str] = field(default_factory=dict)
     # e.g. {'google': 'AIza...', 'openai': 'sk-...', 'anthropic': 'sk-ant-...'}
     custom_endpoints: dict[str, str] = field(default_factory=dict)
@@ -154,7 +167,7 @@ class Servo:
     # ------------------------------------------------------------------
 
     def _validate_and_cache(self) -> None:
-        """Validate the API key and cache the user's routing config."""
+        """Validate the API key, cache routing config and model pricing."""
         # Step 1: Validate API key
         try:
             validate_data = self._http.request_json("POST", "/api/sdk/validate")
@@ -176,6 +189,37 @@ class Servo:
         except ServoAPIError:
             # Routing config is optional — SDK can still function without it
             pass
+
+        # Step 3: Fetch model pricing from Supabase (best-effort)
+        try:
+            pricing_data = self._http.request_json("GET", "/api/sdk/model-pricing")
+            rows = pricing_data.get("pricing") or []
+            pricing_map: dict[str, tuple[float, float]] = {
+                str(row["model_id"]).lower(): (
+                    float(row["input_per_million"]),
+                    float(row["output_per_million"]),
+                )
+                for row in rows
+                if "model_id" in row and "input_per_million" in row and "output_per_million" in row
+            }
+            self._cached_config.model_pricing = pricing_map
+        except Exception:
+            # Pricing fetch is best-effort; cost calculations fall back to _DEFAULT_PRICING
+            pass
+
+        # Step 4: Determine baseline model (most expensive by output rate in routing config)
+        if (
+            self._cached_config.routing_config is not None
+            and self._cached_config.model_pricing
+        ):
+            baseline_model = ""
+            max_output_rate = -1.0
+            for cat in self._cached_config.routing_config.categories:
+                _, output_rate = self._get_model_pricing(cat.model)
+                if output_rate > max_output_rate:
+                    max_output_rate = output_rate
+                    baseline_model = cat.model
+            self._cached_config.baseline_model_id = baseline_model
 
     # ------------------------------------------------------------------
     # Properties
@@ -514,20 +558,35 @@ class Servo:
         return ChatOpenAI(model=category.model, base_url=endpoint, api_key="not-needed")
 
     @staticmethod
-    def _build_execution_messages(subtask_text: str, context: list[str]) -> list:
-        """Build LangChain messages for a subtask, injecting dependency outputs as context."""
+    @staticmethod
+    def _build_execution_messages(subtask_text: str, context: list[str], model: str = "", original_prompt: str = "") -> list:
+        """Build LangChain messages for a subtask, injecting dependency outputs as context.
+
+        Gemma models do not support system messages, so the system content is prepended
+        directly to the human message in that case.
+        """
+        prompt_line = f"Original user question: {original_prompt}\n\n" if original_prompt else ""
+
         if context:
             context_blocks = "\n\n".join(
                 f"[Dependency {i + 1}]:\n{c}" for i, c in enumerate(context)
             )
             system_content = (
                 "You are a helpful assistant executing one step in a multi-step pipeline.\n"
+                f"{prompt_line}"
                 "The following are outputs from upstream steps that your task depends on:\n\n"
                 f"{context_blocks}\n\n"
                 "Use this context to complete your assigned task."
             )
         else:
-            system_content = "You are a helpful assistant. Complete the following task."
+            system_content = (
+                "You are a helpful assistant. Complete the following task.\n"
+                f"{prompt_line}"
+            )
+
+        # Gemma models reject system messages — fold into the human turn instead.
+        if model.lower().startswith("gemma-"):
+            return [HumanMessage(content=f"{system_content}\n\n{subtask_text}")]
 
         return [SystemMessage(content=system_content), HumanMessage(content=subtask_text)]
 
@@ -536,16 +595,29 @@ class Servo:
         subtask: ContextualizedSubtask,
         db: ContextDB,
         lock: threading.Lock,
+        original_prompt: str = "",
     ) -> SubtaskExecutionResult:
         """Execute a single subtask: resolve category, fetch context, call LLM, write result."""
         category, used_default = self._resolve_category(subtask.complexity_id)
         context = db.get_context_for(subtask.depends_on)
         llm = self._build_llm(category)
-        messages = self._build_execution_messages(subtask.text, context)
+        messages = self._build_execution_messages(subtask.text, context, category.model, original_prompt)
 
+        # Count input tokens locally with tiktoken as a fallback before the API call.
+        tiktoken_input = self._count_tokens_tiktoken(messages)
+
+        t0 = time.perf_counter()
         try:
             response = llm.invoke(messages)
-            response_text: str = response.content
+            raw_content = response.content
+            if isinstance(raw_content, list):
+                # Gemini can return a list of content blocks; extract text parts.
+                response_text: str = "".join(
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in raw_content
+                )
+            else:
+                response_text = str(raw_content)
         except ServoRoutingError:
             raise
         except Exception as e:
@@ -554,6 +626,38 @@ class Servo:
                 subtask_id=subtask.id,
                 cause=e,
             ) from e
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+
+        # Extract real token counts from the provider response.
+        # LangChain standardised keys (all providers): input_tokens / output_tokens
+        lc_usage = getattr(response, "usage_metadata", None) or {}
+        input_tokens  = int(lc_usage.get("input_tokens", 0))
+        output_tokens = int(lc_usage.get("output_tokens", 0))
+
+        # Gemini-specific fallback via response_metadata.usage_metadata
+        # keys: prompt_token_count / candidates_token_count
+        if input_tokens == 0 or output_tokens == 0:
+            rm_usage = (getattr(response, "response_metadata", None) or {}).get("usage_metadata", {})
+            if input_tokens == 0:
+                input_tokens = int(rm_usage.get("prompt_token_count", 0))
+            if output_tokens == 0:
+                output_tokens = int(rm_usage.get("candidates_token_count", 0))
+
+        # Final fallback: tiktoken estimate for input/output if provider reported nothing
+        if input_tokens == 0:
+            input_tokens = tiktoken_input
+        if output_tokens == 0 and response_text:
+            output_tokens = self._count_tokens_tiktoken_text(response_text)
+
+        actual_cost = self._calculate_subtask_cost(category.model, input_tokens, output_tokens)
+
+        # Cost savings: what this subtask would have cost at the baseline (most expensive) model
+        baseline_id = (self._cached_config.baseline_model_id if self._cached_config else "")
+        if baseline_id and baseline_id.lower() != category.model.lower():
+            baseline_cost = self._calculate_subtask_cost(baseline_id, input_tokens, output_tokens)
+            cost_savings = round(max(0.0, baseline_cost - actual_cost), 8)
+        else:
+            cost_savings = 0.0
 
         with lock:
             db.add(subtask.id, response_text)
@@ -566,6 +670,11 @@ class Servo:
             response=response_text,
             used_default_category=used_default,
             depends_on=list(subtask.depends_on),
+            latency_ms=latency_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=actual_cost,
+            cost_savings=cost_savings,
         )
 
     @staticmethod
@@ -600,12 +709,161 @@ class Servo:
 
         return waves
 
+    # ------------------------------------------------------------------
+    # Token counting and cost estimation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _count_tokens_tiktoken(messages: list) -> int:
+        """
+        Count input tokens using tiktoken's cl100k_base encoding.
+
+        cl100k_base is used as a universal approximation across providers
+        (GPT-4, Claude, Gemini all use similar BPE vocabularies at this scale).
+        Follows the OpenAI messages-overhead convention:
+          +4 tokens per message (role + structural delimiters)
+          +2 tokens for reply priming
+        """
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            total = 0
+            for msg in messages:
+                content = getattr(msg, "content", "") or ""
+                total += len(enc.encode(str(content)))
+                total += 4  # role + structural tokens
+            total += 2      # reply priming
+            return total
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _count_tokens_tiktoken_text(text: str) -> int:
+        """Count tokens in a plain text string using tiktoken cl100k_base."""
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            return len(enc.encode(text))
+        except Exception:
+            return 0
+
+    def _get_model_pricing(self, model: str) -> tuple[float, float]:
+        """
+        Return (input $/1M tokens, output $/1M tokens) for a model.
+
+        Looks up the cached Supabase pricing table first (case-insensitive).
+        Falls back to _DEFAULT_PRICING if the model is not found.
+        """
+        pricing_map = (
+            self._cached_config.model_pricing
+            if self._cached_config is not None
+            else {}
+        )
+        key = model.lower()
+        if key in pricing_map:
+            return pricing_map[key]
+        # Partial prefix match — handles versioned suffixes like "gemini-2.5-flash-exp"
+        # Require a "-" boundary so "gemini-2.5-flash" never matches "gemini-2.5-flash-lite"
+        for name, pricing in pricing_map.items():
+            if key.startswith(name + "-") or name.startswith(key + "-"):
+                return pricing
+        return _DEFAULT_PRICING
+
+    def _calculate_subtask_cost(
+        self, model: str, input_tokens: int, output_tokens: int
+    ) -> float:
+        """
+        Calculate the USD cost for one subtask using provider-reported token counts
+        and per-model pricing fetched from Supabase.
+        """
+        input_price, output_price = self._get_model_pricing(model)
+        input_cost  = (input_tokens  / 1_000_000) * input_price
+        output_cost = (output_tokens / 1_000_000) * output_price
+        return round(input_cost + output_cost, 8)
+
+    # ------------------------------------------------------------------
+    # Telemetry helpers
+    # ------------------------------------------------------------------
+
+    def _build_telemetry_payload(
+        self,
+        results: list[SubtaskExecutionResult],
+        total_latency_ms: int,
+        prompt_preview: str | None,
+    ) -> dict[str, Any]:
+        """Compile execution trace into the telemetry payload sent to the backend."""
+        model_usage: dict[str, dict[str, int]] = {}
+        chunks = []
+        total_input = 0
+        total_output = 0
+
+        total_cost = 0.0
+        total_savings = 0.0
+        for r in results:
+            chunks.append({
+                "subtask_id": r.subtask_id,
+                "subtask_text": r.subtask_text,
+                "complexity_id": r.complexity_id,
+                "model": r.model,
+                "latency_ms": r.latency_ms,
+                "input_tokens": r.input_tokens,
+                "output_tokens": r.output_tokens,
+                "cost": r.cost,
+                "cost_savings": r.cost_savings,
+                "used_default_category": r.used_default_category,
+                "depends_on": r.depends_on,
+            })
+            total_input += r.input_tokens
+            total_output += r.output_tokens
+            total_cost += r.cost
+            total_savings += r.cost_savings
+            mu = model_usage.setdefault(r.model, {"requests": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0})
+            mu["requests"] += 1
+            mu["input_tokens"] += r.input_tokens
+            mu["output_tokens"] += r.output_tokens
+            mu["cost"] = round(mu["cost"] + r.cost, 8)
+
+        return {
+            "prompt_preview": prompt_preview[:200] if prompt_preview else None,
+            "subtask_count": len(results),
+            "total_latency_ms": total_latency_ms,
+            "total_input_tokens": total_input,
+            "total_output_tokens": total_output,
+            "total_cost": round(total_cost, 8),
+            "total_savings": round(total_savings, 8),
+            "chunks": chunks,
+            "model_usage": model_usage,
+        }
+
+    def _dispatch_telemetry_sync(self, payload: dict[str, Any]) -> None:
+        """Send telemetry payload to the backend. Silently swallows all errors."""
+        try:
+            self._http.request_json("POST", "/api/sdk/telemetry", json_body=payload)
+        except Exception:
+            pass  # telemetry is best-effort — never block or crash the caller
+
+    def _dispatch_telemetry(self, payload: dict[str, Any]) -> None:
+        """Fire-and-forget: dispatch telemetry in a daemon thread."""
+        t = threading.Thread(target=self._dispatch_telemetry_sync, args=(payload,), daemon=True)
+        t.start()
+
+    def _emit_telemetry(self, payload: dict[str, Any]) -> None:
+        mode = self.telemetry_mode.lower()
+        if mode == "off":
+            return
+        if mode == "sync":
+            self._dispatch_telemetry_sync(payload)
+            return
+        self._dispatch_telemetry(payload)
+
     def route_and_execute(
         self,
         contextualized: ContextualizedDecompositionResult,
         db: ContextDB,
         *,
         max_workers: int = 4,
+        prompt_preview: str | None = None,
+        original_prompt: str = "",
     ) -> ExecutionResult:
         """
         Stage 5: dispatch each subtask to its routed LLM, respecting the dependency DAG.
@@ -613,6 +871,9 @@ class Servo:
         Subtasks with no mutual dependencies run in parallel within each wave.
         Each wave completes fully before the next wave begins, ensuring dependency
         outputs are written to ContextDB before downstream subtasks read them.
+
+        After execution, an asynchronous telemetry POST is fired to the Servo backend
+        recording chunks created, models routed to, latency, and token counts.
         """
         if self._cached_config is None or self._cached_config.routing_config is None:
             raise ServoDecompositionError(
@@ -624,13 +885,27 @@ class Servo:
         lock = self._db_lock
         all_results: list[SubtaskExecutionResult] = []
 
+        t0 = time.perf_counter()
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for wave in waves:
-                futures = [executor.submit(self._execute_subtask, s, db, lock) for s in wave]
+                futures = [executor.submit(self._execute_subtask, s, db, lock, original_prompt) for s in wave]
                 for f in futures:
                     all_results.append(f.result())  # blocks until whole wave completes
+        total_latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        return ExecutionResult(subtask_results=all_results)
+        # Telemetry dispatch mode is configurable for scripts/demos that must wait
+        # for the backend write to finish before the process exits.
+        payload = self._build_telemetry_payload(all_results, total_latency_ms, prompt_preview or original_prompt or None)
+        self._emit_telemetry(payload)
+
+        total_cost = sum(r.cost for r in all_results)
+        total_savings = sum(r.cost_savings for r in all_results)
+        return ExecutionResult(
+            subtask_results=all_results,
+            total_latency_ms=total_latency_ms,
+            total_cost=round(total_cost, 8),
+            total_savings=round(total_savings, 8),
+        )
 
     def decompose_classify_embed_and_execute(
         self,
@@ -645,6 +920,11 @@ class Servo:
         """
         contextualized, db = self.decompose_classify_and_embed(prompt, timeout_s=timeout_s)
         try:
-            return self.route_and_execute(contextualized, db, max_workers=max_workers)
+            return self.route_and_execute(
+                contextualized, db,
+                max_workers=max_workers,
+                prompt_preview=prompt,
+                original_prompt=prompt,
+            )
         finally:
             db.close()

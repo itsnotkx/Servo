@@ -1,3 +1,0 @@
-# Install the Servo Python SDK in editable mode
--e "../Python SDK"
-

@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   // until we have a more robust way to fetch user-specific tiers.
   // In the future, this could hit the inference backend or a database table.
   const tiers = {
-    simple: 'gemma-3-27b-it',
+    simple: 'gemini-2.5-flash-lite',
     complex: 'gemini-2.5-flash'
   }
 

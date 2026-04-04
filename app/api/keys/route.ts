@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
+import { syncUserApiKeyAggregates } from '@/lib/execution-log-aggregates'
 
 export async function GET() {
   const { userId } = await auth()
@@ -9,9 +10,16 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  try {
+    await syncUserApiKeyAggregates(userId)
+  } catch (error) {
+    console.error('[api/keys] aggregate sync error:', error)
+    return NextResponse.json({ error: 'Failed to sync key totals' }, { status: 500 })
+  }
+
   const { data, error } = await supabase
     .from('api_keys')
-    .select('id, name, key_prefix, key_suffix, model, tags, requests, cost, status, created_at, last_used')
+    .select('id, name, key_prefix, key_suffix, model, tags, requests, cost, total_savings, status, created_at, last_used')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
@@ -34,10 +42,10 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
-  const { name, model, tags } = body as { name: unknown; model: unknown; tags: unknown }
+  const { name, tags } = body as { name: unknown; tags: unknown }
 
-  if (typeof name !== 'string' || !name.trim() || typeof model !== 'string' || !model.trim()) {
-    return NextResponse.json({ error: 'name and model are required' }, { status: 400 })
+  if (typeof name !== 'string' || !name.trim()) {
+    return NextResponse.json({ error: 'name is required' }, { status: 400 })
   }
 
   const raw = crypto.randomBytes(16).toString('hex') // 128-bit entropy
@@ -51,7 +59,7 @@ export async function POST(request: Request) {
       key,
       key_prefix: 'sk_live_',
       key_suffix: raw.slice(-4),
-      model: (model as string).trim(),
+      model: 'servo-routing',
       tags: Array.isArray(tags) ? tags : [],
     })
     .select('id, name, key_prefix, key_suffix, model, tags, requests, cost, status, created_at, last_used')
