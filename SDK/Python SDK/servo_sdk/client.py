@@ -139,6 +139,7 @@ class Servo:
     api_key: str
     timeout_s: float = 30.0
     classifier_url: str | None = None
+    telemetry_mode: str = "async"
     provider_api_keys: dict[str, str] = field(default_factory=dict)
     # e.g. {'google': 'AIza...', 'openai': 'sk-...', 'anthropic': 'sk-ant-...'}
     custom_endpoints: dict[str, str] = field(default_factory=dict)
@@ -846,6 +847,15 @@ class Servo:
         t = threading.Thread(target=self._dispatch_telemetry_sync, args=(payload,), daemon=True)
         t.start()
 
+    def _emit_telemetry(self, payload: dict[str, Any]) -> None:
+        mode = self.telemetry_mode.lower()
+        if mode == "off":
+            return
+        if mode == "sync":
+            self._dispatch_telemetry_sync(payload)
+            return
+        self._dispatch_telemetry(payload)
+
     def route_and_execute(
         self,
         contextualized: ContextualizedDecompositionResult,
@@ -883,9 +893,10 @@ class Servo:
                     all_results.append(f.result())  # blocks until whole wave completes
         total_latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        # Async telemetry dispatch — non-blocking (builds payload first to get total_cost)
+        # Telemetry dispatch mode is configurable for scripts/demos that must wait
+        # for the backend write to finish before the process exits.
         payload = self._build_telemetry_payload(all_results, total_latency_ms, prompt_preview or original_prompt or None)
-        self._dispatch_telemetry(payload)
+        self._emit_telemetry(payload)
 
         total_cost = sum(r.cost for r in all_results)
         total_savings = sum(r.cost_savings for r in all_results)

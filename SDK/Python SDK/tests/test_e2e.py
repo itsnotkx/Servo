@@ -1,7 +1,7 @@
 """
 E2E integration tests for the full Stage 5 pipeline (decompose → classify → embed → route → execute).
 
-Uses a 2-category routing config (Simple→Gemini 2.5 Flash Lite, Complex→Gemini 3.1 Flash Lite) and breaks out
+Uses a 2-category routing config (Simple→Gemini 2.5 Flash Lite, Complex→Gemini 2.5 Flash) and breaks out
 each pipeline stage explicitly so the flow is visible in test output.
 
 Run with:
@@ -44,14 +44,14 @@ _E2E_CATEGORIES = [
         id="complex",
         name="Complex",
         description="Multi-step reasoning required",
-        model="gemini-3.1-flash-lite",
+        model="gemini-2.5-flash",
     ),
 ]
 _E2E_CONFIG = RoutingConfig(default_category_id="simple", categories=_E2E_CATEGORIES)
 
 _CLASSIFIER_URL: str = os.environ.get("CLASSIFIER_ENDPOINT", "http://localhost:8080")
 
-_E2E_MODELS = {"gemini-2.5-flash-lite", "gemini-3.1-flash-lite"}
+_E2E_MODELS = {"gemini-2.5-flash-lite", "gemini-2.5-flash"}
 
 # ---------------------------------------------------------------------------
 # Skip markers
@@ -99,9 +99,9 @@ def _make_e2e_client() -> Servo:
             routing_config=_E2E_CONFIG,
             model_pricing={
                 "gemini-2.5-flash-lite": (0.10, 0.20),
-                "gemini-3.1-flash-lite": (0.10, 0.40),
+                "gemini-2.5-flash": (0.15, 0.60),
             },
-            baseline_model_id="gemini-3.1-flash-lite",
+            baseline_model_id="gemini-2.5-flash",
         )
 
     Servo.__post_init__ = _bypass_post_init

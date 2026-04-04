@@ -17,7 +17,7 @@ from servo_sdk import Servo
 
 
 def load_repo_env() -> None:
-    env_path = Path(__file__).resolve().parents[2] / ".env"
+    env_path = Path(__file__).resolve().parents[2] / ".env.local"
     if not env_path.exists():
         return
 
@@ -32,7 +32,7 @@ def load_repo_env() -> None:
 load_repo_env()
 
 # ---------------------------------------------------------------------------
-# Keys - stored in the repo root .env file or your shell environment
+# Keys - stored in the repo root .env.local file or your shell environment
 # ---------------------------------------------------------------------------
 
 SERVO_API_KEY = os.environ.get("SERVO_API_KEY", "")
@@ -41,7 +41,7 @@ CLASSIFIER_URL = os.environ.get("CLASSIFIER_ENDPOINT", "http://localhost:8080")
 SERVO_ENDPOINT = os.environ.get("SERVO_ENDPOINT", "http://localhost:3000")
 
 if not SERVO_API_KEY or not GOOGLE_API_KEY:
-    raise RuntimeError("Set SERVO_API_KEY and GOOGLE_AI_STUDIO_API_KEY in the repo root .env file.")
+    raise RuntimeError("Set SERVO_API_KEY and GOOGLE_AI_STUDIO_API_KEY in the repo root .env.local file.")
 
 # ---------------------------------------------------------------------------
 # Init client - validates your key and fetches your routing config
@@ -62,7 +62,7 @@ client = Servo(
 PROMPTS = [
     (
         "simple",
-        "What is the capital of France, and what is it most famous for?",
+        "What is the capital of France",
     ),
     (
         "complex",
@@ -76,13 +76,11 @@ PROMPTS = [
     (
         "mixed",
         (
-            "What is the capital of Japan? "
-            "What is machine learning? "
-            "Then design and implement a neural network from scratch in Python (no ML libraries) "
-            "that learns XOR, explaining backpropagation and the role of activation functions."
+            "I’m creating a task management app and want to know the main features users expect, a simple product description I could put on a landing page, and a sensible pricing structure for individuals and teams."
         ),
     ),
 ]
+
 
 # ---------------------------------------------------------------------------
 # Run

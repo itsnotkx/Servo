@@ -27,7 +27,6 @@ interface RoutingConfig {
 
 const SUPPORTED_MODELS: ModelOption[] = [
   { model: 'gemini-2.5-flash-lite', keyName: 'Google' },
-  { model: 'gemini-3.1-flash-lite', keyName: 'Google' },
   { model: 'gemini-2.5-flash', keyName: 'Google' },
   { model: 'gemini-2.5-pro', keyName: 'Google' },
   { model: 'gpt-4o-mini', keyName: 'OpenAI' },

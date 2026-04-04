@@ -93,7 +93,7 @@ console.log(classification.requires_chunking);   // boolean
 
 // Step 2: Route to appropriate model
 const routing = await client.route(classification);
-console.log(routing.target_model);  // e.g., 'gemini-3.1-flash-lite'
+console.log(routing.target_model);  // e.g., 'gemini-2.5-flash'
 ```
 
 ### Health Check & Tiers
@@ -105,7 +105,7 @@ console.log(health);
 
 // Get available model tiers
 const tiers = await client.tiers();
-console.log(tiers.tiers);  // { simple: 'gemini-2.5-flash-lite', complex: 'gemini-3.1-flash-lite' }
+console.log(tiers.tiers);  // { simple: 'gemini-2.5-flash-lite', complex: 'gemini-2.5-flash' }
 
 // Get available categories with full metadata
 const categories = await client.categories();

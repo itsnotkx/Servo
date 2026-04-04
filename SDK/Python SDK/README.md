@@ -4,7 +4,7 @@ Python SDK for the Servo backend (routing/classification).
 
 ## Features
 
-✅ **Simple 3-step API** - Initialize, send, receive  
+✅ **Simple end-user API** - Initialize, prompt, receive  
 ✅ **Full type hints** - Type-safe with dataclasses  
 ✅ **Conversation management** - Built-in chat history handling  
 ✅ **Modern Python** - Python 3.10+ with type annotations  
@@ -27,20 +27,20 @@ pip install -e .
 ```python
 from servo_sdk import Servo
 
-# 1. Initialize client
 client = Servo(
     api_key="your-api-key",
-    base_url="http://localhost:8000",
-    default_user_id="default_user"
+    classifier_url="http://localhost:8080",
+    telemetry_mode="sync",
+    provider_api_keys={"google": "your-google-ai-studio-key"},
 )
 
-# 2. Send request
-result = client.send("Who was the first president of the United States?")
+result = client.decompose_classify_embed_and_execute(
+    "Who was the first president of the United States?"
+)
 
-# 3. Receive response
-print(result.classification.category_id)     # e.g., 'simple' or 'complex'
-print(result.target_model)                   # e.g., 'gemini-2.5-flash-lite'
-print(result.llm_response)                   # actual LLM response
+print(result.final_response)
+print(result.total_cost)
+print(result.total_savings)
 ```
 
 ## Usage
@@ -51,15 +51,28 @@ print(result.llm_response)                   # actual LLM response
 from servo_sdk import Servo
 
 client = Servo(
-    api_key="ADAWODWA",
-    base_url="http://localhost:8000",         # optional, defaults to localhost:8000
-    timeout_s=30.0,                           # optional, defaults to 30.0
-    default_user_id="default_user",           # optional, defaults to 'default_user'
+    api_key="your-servo-api-key",
+    classifier_url="http://localhost:8080",
+    telemetry_mode="sync",
+    provider_api_keys={"google": "your-google-ai-studio-key"},
 )
 
-result = client.send("What is machine learning?")
-print(result)
+result = client.decompose_classify_embed_and_execute("What is machine learning?")
+print(result.final_response)
+print(result.total_cost)
+print(result.total_savings)
 ```
+
+### Demo Recording Flow
+
+```bash
+cd "SDK/Python SDK"
+pip install -e ".[google]"
+python examples/demo_user_flow.py
+```
+
+When the script prompts for input, the user only enters their prompt. Servo handles
+decomposition, routing, execution, and telemetry automatically inside the SDK.
 
 ### With Conversation Context
 
@@ -95,7 +108,7 @@ print(classification.requires_chunking)   # boolean
 
 # Step 2: Route to appropriate model
 routing = client.route(classification)
-print(routing.target_model)  # e.g., 'gemini-3.1-flash-lite'
+print(routing.target_model)  # e.g., 'gemini-2.5-flash'
 ```
 
 ### Health Check & Tiers
@@ -107,7 +120,7 @@ print(health)
 
 # Get available model tiers
 tiers = client.tiers()
-print(tiers.tiers)  # {'simple': 'gemini-2.5-flash-lite', 'complex': 'gemini-3.1-flash-lite'}
+print(tiers.tiers)  # {'simple': 'gemini-2.5-flash-lite', 'complex': 'gemini-2.5-flash'}
 
 # Get available categories with full metadata
 categories = client.categories()

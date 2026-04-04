@@ -3,22 +3,18 @@ from servo_sdk import Servo
 
 def main() -> None:
     client = Servo(
-        api_key="ADAOWODWA",
-        base_url="http://localhost:8000",
-        default_user_id="default_user"
+        api_key="your-servo-api-key",
+        classifier_url="http://localhost:8080",
+        provider_api_keys={"google": "your-google-ai-studio-key"},
     )
-    
-    # Get categories
-    categories = client.categories()
-    print(f"Available categories: {[c.id for c in categories.categories]}\n")
-    
-    # Send a request
-    result = client.send("Who was the first president of the United States?")
-    
-    print(f"Category: {result.classification.category_id}")
-    print(f"Model: {result.target_model}")
-    print(f"Confidence: {result.classification.confidence:.2f}")
-    print(f"LLM Response: {result.llm_response}")
+
+    result = client.decompose_classify_embed_and_execute(
+        "Explain what machine learning is and give two real-world examples."
+    )
+
+    print(result.final_response)
+    print(f"\nTotal cost: ${result.total_cost:.6f}")
+    print(f"Total savings: ${result.total_savings:.6f}")
 
 
 if __name__ == "__main__":

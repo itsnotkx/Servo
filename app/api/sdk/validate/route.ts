@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   // In the future, this could hit the inference backend or a database table.
   const tiers = {
     simple: 'gemini-2.5-flash-lite',
-    complex: 'gemini-3.1-flash-lite'
+    complex: 'gemini-2.5-flash'
   }
 
   return NextResponse.json({
