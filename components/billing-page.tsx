@@ -1,184 +1,209 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts'
-import { Download, CreditCard } from 'lucide-react'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CreditCard, Receipt, TrendingDown, Zap } from 'lucide-react'
 
-const monthlyData = [
-  { month: 'Oct', cost: 1800, limit: 3000 },
-  { month: 'Nov', cost: 2100, limit: 3000 },
-  { month: 'Dec', cost: 2340, limit: 3500 },
-  { month: 'Jan', cost: 2150, limit: 3500 },
-]
+interface ExecutionLog {
+  id: string
+  created_at: string
+  prompt_preview: string | null
+  total_cost: number
+  total_savings: number
+}
 
-const invoiceData = [
-  {
-    id: 'INV-2025-001',
-    date: 'Jan 1, 2025',
-    amount: 2340,
-    status: 'paid',
-    dueDate: 'Jan 31, 2025',
-  },
-  {
-    id: 'INV-2024-012',
-    date: 'Dec 1, 2024',
-    amount: 2100,
-    status: 'paid',
-    dueDate: 'Dec 31, 2024',
-  },
-  {
-    id: 'INV-2024-011',
-    date: 'Nov 1, 2024',
-    amount: 1900,
-    status: 'paid',
-    dueDate: 'Nov 30, 2024',
-  },
-]
+function formatMonth(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short' })
+}
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 export default function BillingPage() {
+  const [logs, setLogs] = useState<ExecutionLog[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/logs')
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load billing data')
+        }
+        return response.json()
+      })
+      .then((data) => setLogs(Array.isArray(data) ? data : []))
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const totalCost = logs.reduce((sum, log) => sum + (log.total_cost ?? 0), 0)
+  const totalSavings = logs.reduce((sum, log) => sum + (log.total_savings ?? 0), 0)
+  const promptCount = logs.length
+  const averagePromptCost = promptCount > 0 ? totalCost / promptCount : 0
+
+  const monthlyTotals = new Map<string, { month: string; cost: number; savings: number }>()
+  for (const log of logs) {
+    const date = new Date(log.created_at)
+    const key = `${date.getFullYear()}-${date.getMonth()}`
+    const existing = monthlyTotals.get(key) ?? {
+      month: formatMonth(log.created_at),
+      cost: 0,
+      savings: 0,
+    }
+    existing.cost += log.total_cost ?? 0
+    existing.savings += log.total_savings ?? 0
+    monthlyTotals.set(key, existing)
+  }
+
+  const monthlyData = Array.from(monthlyTotals.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([, value]) => ({
+      month: value.month,
+      cost: Number(value.cost.toFixed(6)),
+      savings: Number(value.savings.toFixed(6)),
+    }))
+
+  const recentPromptCharges = logs.slice(0, 10)
+
   return (
     <div className="p-8">
-      {/* Header */}
       <div className="mb-8">
-        <h2 className="text-3xl font-bold text-foreground mb-2">Billing</h2>
-        <p className="text-muted-foreground">Manage your subscription, invoices, and payment methods</p>
+        <h2 className="mb-2 text-3xl font-bold text-foreground">Billing</h2>
+        <p className="text-muted-foreground">Prompt-level cost and savings recorded by the Servo SDK</p>
       </div>
 
-      {/* Billing Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Card className="bg-card border-border p-6">
-          <p className="text-muted-foreground text-sm mb-1">Current Plan</p>
-          <p className="text-2xl font-bold text-foreground">Growth</p>
-          <p className="text-xs text-accent mt-2">$3,500/month</p>
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-border bg-card p-6">
+          <p className="mb-1 text-sm text-muted-foreground">Total Spend</p>
+          <p className="text-2xl font-bold text-foreground">
+            {loading ? '...' : `$${totalCost.toFixed(6)}`}
+          </p>
         </Card>
 
-        <Card className="bg-card border-border p-6">
-          <p className="text-muted-foreground text-sm mb-1">Billing Cycle</p>
-          <p className="text-2xl font-bold text-foreground">Jan 1-31</p>
-          <p className="text-xs text-muted-foreground mt-2">Next renewal: Feb 1</p>
-        </Card>
-
-        <Card className="bg-card border-border p-6">
-          <p className="text-muted-foreground text-sm mb-1">Current Usage</p>
-          <p className="text-2xl font-bold text-foreground">$2,340</p>
-          <div className="mt-3 w-full h-2 bg-secondary rounded-full overflow-hidden">
-            <div className="h-full w-2/3 bg-gradient-to-r from-primary to-accent" />
+        <Card className="border-border bg-card p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="mb-1 text-sm text-muted-foreground">Total Saved</p>
+              <p className="text-2xl font-bold text-accent">
+                {loading ? '...' : `$${totalSavings.toFixed(6)}`}
+              </p>
+            </div>
+            <TrendingDown className="h-5 w-5 text-accent" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">66.9% of limit</p>
         </Card>
 
-        <Card className="bg-card border-border p-6">
-          <p className="text-muted-foreground text-sm mb-1">Next Payment</p>
-          <p className="text-2xl font-bold text-foreground">Feb 1, 2025</p>
-          <p className="text-xs text-muted-foreground mt-2">~$2,500 estimated</p>
+        <Card className="border-border bg-card p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="mb-1 text-sm text-muted-foreground">Prompt Count</p>
+              <p className="text-2xl font-bold text-foreground">
+                {loading ? '...' : promptCount.toLocaleString()}
+              </p>
+            </div>
+            <Receipt className="h-5 w-5 text-primary" />
+          </div>
+        </Card>
+
+        <Card className="border-border bg-card p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="mb-1 text-sm text-muted-foreground">Average Prompt Cost</p>
+              <p className="text-2xl font-bold text-foreground">
+                {loading ? '...' : `$${averagePromptCost.toFixed(6)}`}
+              </p>
+            </div>
+            <Zap className="h-5 w-5 text-destructive" />
+          </div>
         </Card>
       </div>
 
-      {/* Cost Trend Chart */}
-      <Card className="bg-card border-border p-6 mb-8">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Monthly Spending & Limits</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={monthlyData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-            <XAxis dataKey="month" stroke="#a0aec0" style={{ fontSize: '12px' }} />
-            <YAxis stroke="#a0aec0" style={{ fontSize: '12px' }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1a1f26',
-                border: '1px solid #2d3748',
-                borderRadius: '8px',
-              }}
-              labelStyle={{ color: '#e4e6eb' }}
-            />
-            <Legend />
-            <Bar dataKey="cost" fill="#3b82f6" name="Actual Cost" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="limit" fill="#2d3748" name="Monthly Limit" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <Card className="mb-8 border-border bg-card p-6">
+        <h3 className="mb-4 text-lg font-semibold text-foreground">Monthly Prompt Spending</h3>
+        {loading ? (
+          <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+            Loading...
+          </div>
+        ) : monthlyData.length === 0 ? (
+          <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+            No billing data yet
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={monthlyData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
+              <XAxis dataKey="month" stroke="#a0aec0" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#a0aec0" style={{ fontSize: '12px' }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1a1f26',
+                  border: '1px solid #2d3748',
+                  borderRadius: '8px',
+                }}
+                labelStyle={{ color: '#e4e6eb' }}
+              />
+              <Bar dataKey="cost" fill="#ef4444" name="Spend" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="savings" fill="#0ea5e9" name="Savings" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Payment Method */}
-        <Card className="bg-card border-border p-6">
-          <div className="flex items-center justify-between mb-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="border-border bg-card p-6">
+          <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-foreground">Payment Method</h3>
-            <CreditCard className="w-5 h-5 text-primary" />
+            <CreditCard className="h-5 w-5 text-primary" />
           </div>
-          <div className="bg-gradient-to-br from-primary to-accent rounded-lg p-6 text-white mb-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-white opacity-10 rounded-full -mr-8 -mt-8" />
-            <p className="text-sm mb-2">Visa Ending in</p>
+          <div className="relative mb-4 overflow-hidden rounded-lg bg-gradient-to-br from-primary to-accent p-6 text-white">
+            <div className="absolute right-0 top-0 -mr-8 -mt-8 h-20 w-20 rounded-full bg-white opacity-10" />
+            <p className="mb-2 text-sm">Demo Payment Method</p>
             <p className="text-2xl font-bold tracking-widest">•••• 4242</p>
-            <p className="text-xs mt-4">Expires 12/28</p>
+            <p className="mt-4 text-xs">Usage-based billing from recorded prompt costs</p>
           </div>
-          <Button variant="outline" className="w-full text-foreground border-border hover:bg-secondary bg-transparent">
-            Update Payment Method
-          </Button>
+          <p className="text-sm text-muted-foreground">
+            This page now reflects prompt costs recorded by the SDK instead of placeholder subscription data.
+          </p>
         </Card>
 
-        {/* Invoices */}
         <div className="lg:col-span-2">
-          <Card className="bg-card border-border p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-foreground">Recent Invoices</h3>
-              <Button variant="ghost" size="sm" className="text-primary hover:bg-secondary">
-                <Download className="w-4 h-4 mr-1" />
-                Download All
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {invoiceData.map((invoice) => (
-                <div key={invoice.id} className="flex items-center justify-between p-3 bg-secondary bg-opacity-50 rounded-lg hover:bg-opacity-70 transition">
-                  <div className="flex-1">
-                    <p className="font-medium text-foreground">{invoice.id}</p>
-                    <p className="text-xs text-muted-foreground">{invoice.date}</p>
+          <Card className="border-border bg-card p-6">
+            <h3 className="mb-4 text-lg font-semibold text-foreground">Recent Prompt Charges</h3>
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : recentPromptCharges.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No prompt charges recorded yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {recentPromptCharges.map((log) => (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between rounded-lg bg-secondary/50 p-3 transition hover:bg-secondary/70"
+                  >
+                    <div className="min-w-0 flex-1 pr-4">
+                      <p className="truncate font-medium text-foreground">
+                        {log.prompt_preview || 'Untitled prompt'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(log.created_at)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-foreground">${log.total_cost.toFixed(6)}</p>
+                      <p className="text-xs text-accent">Saved ${log.total_savings.toFixed(6)}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-foreground">${invoice.amount.toLocaleString()}</p>
-                    <p
-                      className={`text-xs font-medium ${
-                        invoice.status === 'paid' ? 'text-accent' : 'text-primary'
-                      }`}
-                    >
-                      {invoice.status === 'paid' ? '✓ Paid' : 'Pending'}
-                    </p>
-                  </div>
-                  <Button variant="ghost" size="sm" className="ml-4 text-muted-foreground hover:text-foreground">
-                    <Download className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>
-
-      {/* Billing Info */}
-      <Card className="bg-card border-border p-6 mt-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Billing Information</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="text-sm text-muted-foreground block mb-2">Company Name</label>
-            <p className="text-foreground">Acme AI Startup</p>
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground block mb-2">Email Address</label>
-            <p className="text-foreground">billing@acmeai.com</p>
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground block mb-2">Address</label>
-            <p className="text-foreground">123 Tech Street, San Francisco, CA 94105</p>
-          </div>
-          <div>
-            <label className="text-sm text-muted-foreground block mb-2">Tax ID</label>
-            <p className="text-foreground">98-1234567</p>
-          </div>
-        </div>
-        <Button variant="outline" className="mt-4 text-foreground border-border hover:bg-secondary bg-transparent">
-          Edit Billing Information
-        </Button>
-      </Card>
     </div>
   )
 }
